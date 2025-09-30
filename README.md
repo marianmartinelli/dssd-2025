@@ -105,10 +105,3 @@ La documentación completa se encuentra en [`docs/bonita-variables.md`](docs/bon
 3. Añadir pruebas unitarias.
 4. Completar configuración docker-compose.
 5. Actualizar documentación e instrucciones finales.
-
----
-Cualquier duda o ajuste necesario quedará documentado en los próximos commits y en los archivos de la carpeta `docs/`.
-# dssd-2025
-# dssd-2025
-# dssd-2025
-# dssd-2025
