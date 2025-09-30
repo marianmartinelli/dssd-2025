@@ -109,3 +109,4 @@ La documentación completa se encuentra en [`docs/bonita-variables.md`](docs/bon
 ---
 Cualquier duda o ajuste necesario quedará documentado en los próximos commits y en los archivos de la carpeta `docs/`.
 # dssd-2025
+# dssd-2025
