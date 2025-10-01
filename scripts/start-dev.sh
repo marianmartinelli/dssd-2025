@@ -30,7 +30,7 @@ fi
 # Start services
 echo "🐳 Starting Docker services..."
 cd infra
-docker-compose up --build -d
+docker-compose -f docker-compose.dev.yml up --build -d
 
 echo "⏳ Waiting for services to be healthy..."
 sleep 10

@@ -3,14 +3,23 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, ConfigDict, Field, constr
+
+
+def snake_to_camel(string: str) -> str:
+    words = string.split("_")
+    return words[0] + "".join(word.capitalize() for word in words[1:])
+
+
+class CamelCaseModel(BaseModel):
+    model_config = ConfigDict(alias_generator=snake_to_camel, populate_by_name=True)
 
 
 SupportType = Literal["financial", "materials", "labor", "logistics", "other"]
 PriorityLevel = Literal["low", "medium", "high", "critical"]
 
 
-class WorkPlanStage(BaseModel):
+class WorkPlanStage(CamelCaseModel):
     stage_name: constr(strip_whitespace=True, min_length=3, max_length=120)
     stage_start: date
     stage_end: date
@@ -20,7 +29,7 @@ class WorkPlanStage(BaseModel):
     amount_currency: Optional[str] = Field(None, min_length=3, max_length=3)
 
 
-class ProjectBase(BaseModel):
+class ProjectBase(CamelCaseModel):
     project_name: constr(strip_whitespace=True, min_length=5, max_length=150)
     project_description: constr(strip_whitespace=True, min_length=20, max_length=2000)
     project_category: constr(strip_whitespace=True, min_length=3, max_length=80)
@@ -32,14 +41,14 @@ class ProjectBase(BaseModel):
     start_date: date
     end_date: date
     priority_level: PriorityLevel
-    supporting_docs_url: Optional[str]
+    supporting_docs_url: Optional[str] = None
 
 
 class ProjectCreate(ProjectBase):
     work_plan_stages: List[WorkPlanStage] = Field(..., min_length=1, max_length=20)
 
 
-class BonitaInstantiationResult(BaseModel):
+class BonitaInstantiationResult(CamelCaseModel):
     case_id: int
     process_definition_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -7,7 +7,6 @@ Aplicación full-stack (React + FastAPI + PostgreSQL + Bonita BPM) para la **Ent
 - Implementar el formulario web de alta de proyectos.
 - Exponer un backend que reciba la información del formulario, la valide y cree la instancia del proceso en Bonita BPM cargando el volumen de datos (Business Data Model).
 - Preparar la infraestructura dockerizada (frontend, backend, base de datos y Bonita).
-- Incluir pruebas unitarias básicas en frontend y backend.
 - Documentar las variables de proceso requeridas en Bonita.
 
 ## Estructura del repositorio
@@ -47,42 +46,36 @@ Aplicación full-stack (React + FastAPI + PostgreSQL + Bonita BPM) para la **Ent
 
 Copiar cada `*.env.example` a `.env` y ajustar valores.
 
-## Puesta en marcha local (Docker + Bonita local)
+## Puesta en marcha (Docker)
+
+Esta aplicación está configurada para dos entornos: desarrollo (con hot-reloading) y producción.
+
+### Entorno de Desarrollo
 
 **Prerequisito**: Bonita BPM debe estar corriendo localmente en puerto 8080.
 
+Para levantar el entorno de desarrollo, que incluye hot-reloading para el frontend y el backend, ejecuta:
+
 ```bash
-# Iniciar Bonita localmente primero
-# Luego ejecutar el stack Docker:
-docker compose -f infra/docker-compose.yml up --build
+./scripts/start-dev.sh
 ```
 
-Servicios expuestos:
+Esto usará el archivo `infra/docker-compose.dev.yml`.
 
-- Frontend: <http://localhost:5173>
-- Backend API: <http://localhost:8000/api/v1>
+Servicios expuestos en desarrollo:
+
+- Frontend (Vite): <http://localhost:5173>
+- Backend API (FastAPI): <http://localhost:8000/api/v1>
 - Swagger Backend: <http://localhost:8000/docs>
 - Bonita BPM Portal: <http://localhost:8080/bonita> (LOCAL - no en Docker)
-- PostgreSQL: `localhost:5432` (usuario/clave definidas en `.env`)
+- PostgreSQL: `localhost:5432`
 
-## Desarrollo local sin Docker
+### Entorno de Producción
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Backend
+Para simular el entorno de producción (sin hot-reloading), puedes usar:
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e .[test]
-uvicorn app.main:app --reload
+docker-compose -f infra/docker-compose.prod.yml up --build
 ```
 
 ## Pruebas
@@ -97,11 +90,3 @@ La documentación completa se encuentra en [`docs/bonita-variables.md`](docs/bon
 - Definición del Business Data Model (`Project`, `WorkPlanStage`).
 - Variables de contrato para la tarea de inicio.
 - Notas sobre carga de datos y relaciones.
-
-## Próximos pasos
-
-1. Implementar formulario y lógica de envío en el frontend.
-2. Exponer endpoints en backend y conexión con Bonita.
-3. Añadir pruebas unitarias.
-4. Completar configuración docker-compose.
-5. Actualizar documentación e instrucciones finales.
