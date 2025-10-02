@@ -18,10 +18,10 @@ class BonitaClient:
     def __init__(self) -> None:
         self.base_url = settings.bonita_base_url
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=15.0)
-        self._session_cookie: str | None = None
+        self._csrf_token: str | None = None
 
     async def _ensure_session(self) -> None:
-        if self._session_cookie:
+        if self._csrf_token:
             return
 
         payload = {
@@ -38,7 +38,11 @@ class BonitaClient:
                 detail="Bonita authentication failed",
             )
 
-        self._session_cookie = response.headers.get("set-cookie")
+        self._csrf_token = self._client.cookies.get("X-Bonita-API-Token")
+        if not self._csrf_token:
+            logger.error("Bonita login failed: CSRF token not found in cookies")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bonita CSRF token not found")
+
         logger.info("Bonita session established")
 
     async def _get_process_definition_id(self) -> str:
@@ -61,8 +65,8 @@ class BonitaClient:
         headers: Dict[str, str] = {
             "Content-Type": "application/json",
         }
-        if self._session_cookie:
-            headers["Cookie"] = self._session_cookie
+        if self._csrf_token:
+            headers["X-Bonita-API-Token"] = self._csrf_token
         return headers
 
     async def instantiate_process(self, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
@@ -79,16 +83,19 @@ class BonitaClient:
             logger.error(
                 "Bonita instantiation failed",
                 status_code=response.status_code,
+                headers=dict(response.headers),
                 body=response.text,
                 payload=contract_payload,
             )
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bonita process instantiation failed")
 
-        return response.json()
+        response_data = response.json()
+        response_data["processDefinitionId"] = process_id
+        return response_data
 
     def _build_contract_payload(self, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
         return {
-            "project": {
+            "proyectoContrato": {
                 "projectName": project.project_name,
                 "projectDescription": project.project_description,
                 "projectCategory": project.project_category,
@@ -120,7 +127,7 @@ class BonitaClient:
 
     async def close(self) -> None:
         await self._client.aclose()
-        self._session_cookie = None
+        self._csrf_token = None
 
 
 async def instantiate_project(project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
