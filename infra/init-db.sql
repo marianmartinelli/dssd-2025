@@ -27,7 +27,7 @@ VALUES (
 ) ON CONFLICT (email) DO NOTHING;
 
 -- Example: Project tracking table (for audit/logging)
-CREATE TABLE IF NOT EXISTS project_submissions (
+/*CREATE TABLE IF NOT EXISTS project_submissions (
     id SERIAL PRIMARY KEY,
     bonita_case_id BIGINT,
     project_name VARCHAR(255) NOT NULL,
@@ -40,3 +40,39 @@ CREATE TABLE IF NOT EXISTS project_submissions (
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_project_submissions_case_id ON project_submissions(bonita_case_id);
 CREATE INDEX IF NOT EXISTS idx_project_submissions_submitted_at ON project_submissions(submitted_at);
+*/
+
+
+-- Update table for projects
+DROP TABLE IF EXISTS projects CASCADE;
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    project_name VARCHAR(255) NOT NULL,
+    project_description TEXT,
+    project_category VARCHAR(255),
+    requesting_organization VARCHAR(255),
+    contact_email VARCHAR(255),
+    contact_phone VARCHAR(50),
+    estimated_budget NUMERIC,
+    currency VARCHAR(10),
+    start_date DATE,
+    end_date DATE,
+    priority_level VARCHAR(50),
+    supporting_docs_url TEXT,
+    submission_timestamp TIMESTAMP,
+    initiator_user_id VARCHAR(255)
+);
+
+-- Update table for work plan stages
+DROP TABLE IF EXISTS work_plan_stages;
+CREATE TABLE work_plan_stages (
+    id SERIAL PRIMARY KEY,
+    project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+    stage_name VARCHAR(255) NOT NULL,
+    stage_start DATE,
+    stage_end DATE,
+    support_type VARCHAR(255),
+    description TEXT,
+    estimated_amount NUMERIC,
+    amount_currency VARCHAR(10)
+);
