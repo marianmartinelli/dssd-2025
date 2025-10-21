@@ -1,8 +1,10 @@
 from app.schemas.project import ProjectCreate
-from typing import Dict
+from typing import Dict, List
 from app.core.database import get_db_session
 from app.models.project import Project, WorkPlanStage
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 
 async def save_project(payload: ProjectCreate, bonita_response: Dict, current_user: Dict):
@@ -56,3 +58,19 @@ async def save_project(payload: ProjectCreate, bonita_response: Dict, current_us
         await session.commit()
     finally:
         await session.close()
+
+
+async def list_projects(session: AsyncSession) -> List[Project]:
+    """
+    List all projects with their associated work plan stages.
+
+    Args:
+        session (AsyncSession): The database session.
+
+    Returns:
+        List[Project]: List of all projects with their work plan stages.
+    """
+    stmt = select(Project).options(selectinload(Project.work_plan_stages))
+    result = await session.execute(stmt)
+    projects = result.scalars().all()
+    return list(projects)

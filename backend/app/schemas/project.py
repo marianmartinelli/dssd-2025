@@ -52,3 +52,38 @@ class BonitaInstantiationResult(CamelCaseModel):
     case_id: int
     process_definition_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WorkPlanStageResponse(CamelCaseModel):
+    id: int
+    project_id: int
+    stage_name: str
+    stage_start: Optional[date] = None
+    stage_end: Optional[date] = None
+    support_type: Optional[str] = None
+    description: Optional[str] = None
+    estimated_amount: Optional[float] = None
+    amount_currency: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectResponse(CamelCaseModel):
+    id: int
+    project_name: str
+    project_description: Optional[str] = None
+    project_category: Optional[str] = None
+    requesting_organization: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    estimated_budget: Optional[float] = None
+    currency: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    priority_level: Optional[str] = None
+    supporting_docs_url: Optional[str] = None
+    submission_timestamp: Optional[datetime] = None
+    initiator_user_id: Optional[str] = None
+    work_plan_stages: List[WorkPlanStageResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
