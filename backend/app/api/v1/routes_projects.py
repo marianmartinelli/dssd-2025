@@ -41,6 +41,7 @@ async def create_project(
 
     except Exception as e:
         # Manejar errores inesperados
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error: {str(e)}",
         )
