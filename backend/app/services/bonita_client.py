@@ -10,49 +10,36 @@ from structlog import get_logger
 
 from app.core.config import get_settings
 from app.schemas.project import ProjectCreate, WorkPlanStage
+from app.services.bonita_session_manager import BonitaSession
 
 logger = get_logger()
 settings = get_settings()
 
 
 class BonitaClient:
-    def __init__(self) -> None:
-        self.base_url = settings.bonita_base_url
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=15.0)
-        self._csrf_token: str | None = None
+    """Cliente para interactuar con Bonita BPM usando una sesión autenticada."""
 
-    async def _ensure_session(self) -> None:
-        if self._csrf_token:
-            return
+    def __init__(self, session: BonitaSession) -> None:
+        """
+        Inicializa el cliente con una sesión autenticada de Bonita.
 
-        payload = {
-            "username": settings.bonita_api_username,
-            "password": settings.bonita_api_password,
-            "redirect": "false",
-        }
-
-        response = await self._client.post("/bonita/loginservice", data=payload)
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            logger.error("Bonita login failed", status_code=response.status_code, body=response.text)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Bonita authentication failed",
-            )
-
-        self._csrf_token = self._client.cookies.get("X-Bonita-API-Token")
-        if not self._csrf_token:
-            logger.error("Bonita login failed: CSRF token not found in cookies")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bonita CSRF token not found")
-
-        logger.info("Bonita session established")
+        Args:
+            session: Sesión de Bonita autenticada con las credenciales del usuario
+        """
+        self.session = session
+        if not session.is_authenticated:
+            raise ValueError("La sesión de Bonita debe estar autenticada antes de crear el cliente")
 
     async def _get_process_definition_id(self) -> str:
-        await self._ensure_session()
-
+        """Obtiene el ID de la definición del proceso de Bonita."""
         params = {
             "f": [f"name={settings.bonita_process_definition}", f"version={settings.bonita_process_version}"],
         }
-        response = await self._client.get("/bonita/API/bpm/process", params=params, headers=self._auth_headers)
+        response = await self.session.client.get(
+            "/bonita/API/bpm/process",
+            params=params,
+            headers=self.session.auth_headers
+        )
         response.raise_for_status()
 
         data = response.json()
@@ -61,22 +48,14 @@ class BonitaClient:
 
         return data[0]["id"]
 
-    @property
-    def _auth_headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {
-            "Content-Type": "application/json",
-        }
-        if self._csrf_token:
-            headers["X-Bonita-API-Token"] = self._csrf_token
-        return headers
-
     async def instantiate_process(self, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
+        """Instancia un proceso de Bonita con los datos del proyecto."""
         process_id = await self._get_process_definition_id()
 
         contract_payload = self._build_contract_payload(project, initiator_username)
-        response = await self._client.post(
+        response = await self.session.client.post(
             f"/bonita/API/bpm/process/{process_id}/instantiation",
-            headers=self._auth_headers,
+            headers=self.session.auth_headers,
             content=json.dumps(contract_payload),
         )
 
@@ -126,17 +105,15 @@ class BonitaClient:
             "amountCurrency": stage.amount_currency,
         }
 
-    async def close(self) -> None:
-        await self._client.aclose()
-        self._csrf_token = None
-
     async def _get_task_by_case_id(self, case_id: str, max_retries: int = 10, retry_delay: float = 0.5) -> str:
         """Obtiene el taskId a partir del caseId con reintentos"""
-        await self._ensure_session()
-
         for attempt in range(max_retries):
             params = {"f": f"caseId={case_id}"}
-            response = await self._client.get("/bonita/API/bpm/userTask", params=params, headers=self._auth_headers)
+            response = await self.session.client.get(
+                "/bonita/API/bpm/userTask",
+                params=params,
+                headers=self.session.auth_headers
+            )
             
             if response.status_code != status.HTTP_200_OK:
                 logger.error(
@@ -174,9 +151,10 @@ class BonitaClient:
 
     async def _get_logged_user(self) -> str:
         """Obtiene el ID del usuario logueado en Bonita"""
-        await self._ensure_session()
-
-        response = await self._client.get("/bonita/API/system/session/1", headers=self._auth_headers)
+        response = await self.session.client.get(
+            "/bonita/API/system/session/1",
+            headers=self.session.auth_headers
+        )
         
         if response.status_code != status.HTTP_200_OK:
             logger.error(
@@ -197,12 +175,10 @@ class BonitaClient:
 
     async def assign_task_to_user(self, task_id: str, user_id: str) -> None:
         """Asigna una tarea a un usuario específico"""
-        await self._ensure_session()
-
         payload = {"assigned_id": user_id}
-        response = await self._client.put(
+        response = await self.session.client.put(
             f"/bonita/API/bpm/userTask/{task_id}",
-            headers=self._auth_headers,
+            headers=self.session.auth_headers,
             content=json.dumps(payload),
         )
 
@@ -220,11 +196,9 @@ class BonitaClient:
 
     async def complete_task(self, task_id: str) -> None:
         """Marca una tarea como completada"""
-        await self._ensure_session()
-
-        response = await self._client.post(
+        response = await self.session.client.post(
             f"/bonita/API/bpm/userTask/{task_id}/execution",
-            headers=self._auth_headers,
+            headers=self.session.auth_headers,
         )
 
         if response.status_code not in (status.HTTP_200_OK, status.HTTP_204_NO_CONTENT):
@@ -239,31 +213,43 @@ class BonitaClient:
         logger.info("Task completed", task_id=task_id)
 
 
-async def instantiate_project(project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
-    client = BonitaClient()
+async def instantiate_project(client: BonitaClient, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
+    """
+    Instancia un proyecto en Bonita usando un cliente autenticado.
+
+    Args:
+        client: Cliente de Bonita ya autenticado con las credenciales del usuario
+        project: Datos del proyecto a crear
+        initiator_username: Username del usuario que inicia el proceso
+
+    Returns:
+        Diccionario con caseId y processDefinitionId
+
+    Raises:
+        HTTPException: Si ocurre algún error durante el proceso
+    """
     try:
         response = await client.instantiate_process(project, initiator_username)
-        
+
         if not response.get("caseId"):
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Case ID not found in Bonita response")
-        
+
         logger.info("Bonita case created", response=response)
         case_id = response.get("caseId")
         processDefinitionId = response.get("processDefinitionId")
 
         task_id = await client._get_task_by_case_id(case_id)
         logger.info("Task ID obtained", task_id=task_id)
-        
+
         user_id = await client._get_logged_user()
         logger.info("User ID obtained", user_id=user_id)
-        
+
         await client.assign_task_to_user(task_id, user_id)
         logger.info("Task assigned successfully")
-        
+
         await client.complete_task(task_id)
         logger.info("Task completed successfully")
-        
-        
+
         return {
             "caseId": case_id,
             "processDefinitionId": processDefinitionId,
@@ -277,5 +263,3 @@ async def instantiate_project(project: ProjectCreate, initiator_username: str) -
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing project workflow: {str(e)}"
         )
-    finally:
-        await client.close()

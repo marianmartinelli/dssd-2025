@@ -25,9 +25,12 @@ class Settings(BaseSettings):
     database_url: str = Field(default="postgresql+asyncpg://projectplanning:projectplanning@db:5432/projectplanning")
 
     # Bonita BPM
+    use_bonita: bool = Field(default=True, description="Enable/disable Bonita BPM integration")
     bonita_base_url: str = Field(default="http://bonita:8080")
-    bonita_api_username: str = Field(default="technical_user")
-    bonita_api_password: str = Field(default="technical_user")
+    # DEPRECATED: Ya no se usa un usuario técnico compartido
+    # Las credenciales vienen del usuario que hace login
+    bonita_api_username: str = Field(default="technical_user", description="[DEPRECATED] No longer used")
+    bonita_api_password: str = Field(default="technical_user", description="[DEPRECATED] No longer used")
     bonita_process_definition: str = Field(default="ProjectPlanningProcess")
     bonita_process_version: str = Field(default="1.0")
 

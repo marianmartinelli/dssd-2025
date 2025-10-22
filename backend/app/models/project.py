@@ -14,12 +14,13 @@ class Project(Base):
     contact_phone = Column(String, nullable=True)
     estimated_budget = Column(Float, nullable=True)
     currency = Column(String, nullable=True)
-    start_date = Column(Date, nullable=True)  
-    end_date = Column(Date, nullable=True) 
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
     priority_level = Column(String, nullable=True)
     supporting_docs_url = Column(String, nullable=True)
     submission_timestamp = Column(DateTime, nullable=True)
     initiator_user_id = Column(String, nullable=True)
+    case_id = Column(Integer, nullable=True)
 
     # Relationships
     work_plan_stages = relationship("WorkPlanStage", back_populates="project")

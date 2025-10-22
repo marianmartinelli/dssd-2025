@@ -10,7 +10,7 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 settings = get_settings()
 
 
-def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None, additional_claims: Optional[dict[str, Any]] = None) -> str:
     if expires_delta is None:
         expires_delta = timedelta(minutes=settings.jwt_access_token_expires_minutes)
 
@@ -20,6 +20,11 @@ def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] =
         "iat": now.timestamp(),
         "exp": (now + expires_delta).timestamp(),
     }
+
+    # Agregar claims adicionales si se proporcionan
+    if additional_claims:
+        payload.update(additional_claims)
+
     encoded_jwt = jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 

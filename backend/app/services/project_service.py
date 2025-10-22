@@ -7,57 +7,61 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 
-async def save_project(payload: ProjectCreate, bonita_response: Dict, current_user: Dict):
+async def save_project(
+    payload: ProjectCreate,
+    current_user: Dict,
+    db_session: AsyncSession,
+    case_id: int = None
+) -> Project:
     """
     Save the project and its associated plan in the database.
 
     Args:
         payload (ProjectCreate): The project data sent in the request.
-        bonita_response (Dict): The response from Bonita containing case and process IDs.
         current_user (Dict): The current authenticated user.
+        db_session (AsyncSession): The database session.
+        case_id (int, optional): The Bonita case ID if available.
 
     Returns:
-        None
+        Project: The saved project with its work plan stages.
     """
-    session_generator = get_db_session()
-    session = await session_generator.__anext__()
-    try:
-        project = Project(
-            project_name=payload.project_name,
-            project_description=payload.project_description,
-            project_category=payload.project_category,
-            requesting_organization=payload.requesting_organization,
-            contact_email=payload.contact_email,
-            contact_phone=payload.contact_phone,
-            estimated_budget=payload.estimated_budget,
-            currency=payload.currency,
-            start_date=payload.start_date,
-            end_date=payload.end_date,
-            priority_level=payload.priority_level,
-            supporting_docs_url=payload.supporting_docs_url,
-            submission_timestamp=datetime.strptime(payload.start_date.strftime("%Y-%m-%dT%H:%M:%S"), "%Y-%m-%dT%H:%M:%S"),
-            initiator_user_id=current_user["username"],
+    project = Project(
+        project_name=payload.project_name,
+        project_description=payload.project_description,
+        project_category=payload.project_category,
+        requesting_organization=payload.requesting_organization,
+        contact_email=payload.contact_email,
+        contact_phone=payload.contact_phone,
+        estimated_budget=payload.estimated_budget,
+        currency=payload.currency,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        priority_level=payload.priority_level,
+        supporting_docs_url=payload.supporting_docs_url,
+        submission_timestamp=datetime.strptime(payload.start_date.strftime("%Y-%m-%dT%H:%M:%S"), "%Y-%m-%dT%H:%M:%S"),
+        initiator_user_id=current_user["username"],
+        case_id=case_id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+
+    # Save work plan stages
+    for stage in payload.work_plan_stages:
+        work_plan_stage = WorkPlanStage(
+            project_id=project.id,
+            stage_name=stage.stage_name,
+            stage_start=stage.stage_start,
+            stage_end=stage.stage_end,
+            support_type=stage.support_type,
+            description=stage.description,
+            estimated_amount=stage.estimated_amount,
+            amount_currency=stage.amount_currency,
         )
-        session.add(project)
-        await session.flush() 
+        db_session.add(work_plan_stage)
 
-        # Save work plan stages
-        for stage in payload.work_plan_stages:
-            work_plan_stage = WorkPlanStage(
-                project_id=project.id,
-                stage_name=stage.stage_name,
-                stage_start=stage.stage_start,
-                stage_end=stage.stage_end, 
-                support_type=stage.support_type,
-                description=stage.description,
-                estimated_amount=stage.estimated_amount,
-                amount_currency=stage.amount_currency,
-            )
-            session.add(work_plan_stage)
-
-        await session.commit()
-    finally:
-        await session.close()
+    await db_session.commit()
+    await db_session.refresh(project, ["work_plan_stages"])
+    return project
 
 
 async def list_projects(session: AsyncSession) -> List[Project]:

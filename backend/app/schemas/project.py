@@ -84,6 +84,7 @@ class ProjectResponse(CamelCaseModel):
     supporting_docs_url: Optional[str] = None
     submission_timestamp: Optional[datetime] = None
     initiator_user_id: Optional[str] = None
+    case_id: Optional[int] = None
     work_plan_stages: List[WorkPlanStageResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
