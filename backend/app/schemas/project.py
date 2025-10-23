@@ -88,3 +88,26 @@ class ProjectResponse(CamelCaseModel):
     work_plan_stages: List[WorkPlanStageResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CollaborationRequestCreate(CamelCaseModel):
+    stage_id: int
+    title: constr(strip_whitespace=True, min_length=3, max_length=150)
+    description: Optional[constr(strip_whitespace=True, min_length=3, max_length=1000)]
+    requested_amount: Optional[float] = Field(None, ge=0)
+    amount_currency: Optional[str] = Field(None, min_length=3, max_length=3)
+
+
+class CollaborationRequestResponse(CamelCaseModel):
+    id: int
+    stage_id: int
+    title: str
+    description: Optional[str] = None
+    requested_amount: Optional[float] = None
+    amount_currency: Optional[str] = None
+    requested_date: Optional[datetime] = None
+    is_committed: Optional[bool] = False
+    is_completed: Optional[bool] = False
+    committed_by: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
