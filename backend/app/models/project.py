@@ -41,7 +41,7 @@ class WorkPlanStage(Base):
 
     # Relationships
     project = relationship("Project", back_populates="work_plan_stages")
-    collaboration_requests = relationship("CollaborationRequest", back_populates="WorkPlanStage")
+    collaboration_requests = relationship("CollaborationRequest", back_populates="stage")
 
 class CollaborationRequest(Base):
     __tablename__ = "collaboration_requests"

@@ -5,9 +5,9 @@ from typing import List, Optional
 from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
 from app.core.database import get_db_session
-from app.schemas.project import ProjectCreate, ProjectResponse
+from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse
 from app.services.bonita_client import instantiate_project, BonitaClient
-from app.services.project_service import save_project, list_projects
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project
 
 router = APIRouter()
 settings = get_settings()
@@ -89,3 +89,50 @@ async def get_projects(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al listar proyectos: {str(e)}",
         )
+
+
+@router.post(
+    "/projects/{project_id}/stages/{stage_id}/collaborations",
+    response_model=CollaborationRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear pedido de colaboración asociado a un proyecto y una etapa",
+)
+async def create_stage_collaboration(
+    project_id: int,
+    stage_id: int,
+    payload: CollaborationRequestCreate,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> CollaborationRequestResponse:
+    """
+    Crea un pedido de colaboración asociado al proyecto (project_id) y a la etapa (stage_id).
+    Requiere autenticación (get_current_user).
+    """
+    collab = await create_collaboration_request(
+        project_id=project_id,
+        stage_id=stage_id,
+        payload=payload,
+        current_user=current_user,
+        session=session,
+    )
+    # Convert ORM -> Pydantic
+    return CollaborationRequestResponse.model_validate(collab)
+
+
+@router.get(
+    "/projects/{project_id}/collaborations",
+    response_model=List[CollaborationRequestResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List collaboration requests for a project",
+)
+async def get_project_collaborations(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> List[CollaborationRequestResponse]:
+    """
+    Recupera todos los pedidos de colaboración asociados al proyecto indicado.
+    """
+    collaborations = await list_collaboration_requests_by_project(project_id, session)
+    # Convertir a Pydantic (Pydantic v2): model_validate desde atributos/ORM
+    return [CollaborationRequestResponse.model_validate(c) for c in collaborations]
