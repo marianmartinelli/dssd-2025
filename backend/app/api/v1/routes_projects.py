@@ -92,30 +92,34 @@ async def get_projects(
 
 
 @router.post(
-    "/projects/{project_id}/stages/{stage_id}/collaborations",
+    "/collaborations",
     response_model=CollaborationRequestResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crear pedido de colaboración asociado a un proyecto y una etapa",
 )
 async def create_stage_collaboration(
-    project_id: int,
-    stage_id: int,
     payload: CollaborationRequestCreate,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> CollaborationRequestResponse:
     """
-    Crea un pedido de colaboración asociado al proyecto (project_id) y a la etapa (stage_id).
-    Requiere autenticación (get_current_user).
+    Crea un pedido de colaboración asociado al proyecto y etapa especificados en el body.
+    
+    El body debe incluir:
+    - projectId: ID del proyecto
+    - stageId: ID de la etapa
+    - title: título del pedido
+    - description: descripción (opcional)
+    - requestedAmount: monto solicitado (opcional)
+    - amountCurrency: moneda del monto (opcional)
     """
     collab = await create_collaboration_request(
-        project_id=project_id,
-        stage_id=stage_id,
+        project_id=payload.project_id,
+        stage_id=payload.stage_id,
         payload=payload,
         current_user=current_user,
         session=session,
     )
-    # Convert ORM -> Pydantic
     return CollaborationRequestResponse.model_validate(collab)
 
 
