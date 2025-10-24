@@ -38,6 +38,7 @@ class WorkPlanStage(Base):
     description = Column(String, nullable=True)
     estimated_amount = Column(Float, nullable=True)
     amount_currency = Column(String, nullable=True)
+    is_completed = Column(Boolean, default=False)
 
     # Relationships
     project = relationship("Project", back_populates="work_plan_stages")
@@ -53,9 +54,10 @@ class CollaborationRequest(Base):
     requested_amount = Column(Float, nullable=True)
     amount_currency = Column(String, nullable=True)
     requested_date = Column(DateTime, default=datetime.utcnow)
-    is_committed = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False)
     is_completed = Column(Boolean, default=False)
-    committed_by = Column(String, nullable=True) 
+    committed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Relationships
     stage = relationship("WorkPlanStage", back_populates="collaboration_requests")
+    committed_user = relationship("User", foreign_keys=[committed_by])

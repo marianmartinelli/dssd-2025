@@ -64,6 +64,7 @@ class WorkPlanStageResponse(CamelCaseModel):
     description: Optional[str] = None
     estimated_amount: Optional[float] = None
     amount_currency: Optional[str] = None
+    is_completed: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -107,8 +108,8 @@ class CollaborationRequestResponse(CamelCaseModel):
     requested_amount: Optional[float] = None
     amount_currency: Optional[str] = None
     requested_date: Optional[datetime] = None
-    is_committed: Optional[bool] = False
+    is_approved: Optional[bool] = False
     is_completed: Optional[bool] = False
-    committed_by: Optional[str] = None
+    committed_by: int
 
     model_config = ConfigDict(from_attributes=True)
