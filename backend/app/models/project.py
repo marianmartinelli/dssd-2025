@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean 
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from datetime import datetime
 
 class Project(Base):
     __tablename__ = "projects"
@@ -37,6 +38,26 @@ class WorkPlanStage(Base):
     description = Column(String, nullable=True)
     estimated_amount = Column(Float, nullable=True)
     amount_currency = Column(String, nullable=True)
+    is_completed = Column(Boolean, default=False)
 
     # Relationships
     project = relationship("Project", back_populates="work_plan_stages")
+    collaboration_requests = relationship("CollaborationRequest", back_populates="stage")
+
+class CollaborationRequest(Base):
+    __tablename__ = "collaboration_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_stage_id = Column(Integer, ForeignKey("work_plan_stages.id"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    requested_amount = Column(Float, nullable=True)
+    amount_currency = Column(String, nullable=True)
+    requested_date = Column(DateTime, default=datetime.utcnow)
+    is_approved = Column(Boolean, default=False)
+    is_completed = Column(Boolean, default=False)
+    committed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Relationships
+    stage = relationship("WorkPlanStage", back_populates="collaboration_requests")
+    committed_user = relationship("User", foreign_keys=[committed_by])
