@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AlertColor } from '@mui/material'
 import {
   Box,
@@ -12,13 +12,16 @@ import {
   Divider,
   Tooltip,
   Alert,
+  FormControlLabel,
+  Switch,
 } from '@mui/material'
-import { Add, DeleteOutline, Save } from '@mui/icons-material'
-import { useForm, useFieldArray, type SubmitHandler } from 'react-hook-form'
+import { Add, DeleteOutline, Save, Casino } from '@mui/icons-material'
+import { useForm, useFieldArray, Controller, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { ProjectFormValues, ProjectCreationResponse, WorkPlanStageForm } from '../types/project'
 import { projectSchema } from '../lib/validation'
 import { useCreateProject } from '../hooks/useCreateProject'
+import { generateRandomProjectData } from '../lib/generateRandomData'
 
 const createDefaultStage = (): WorkPlanStageForm => ({
   stageName: '',
@@ -52,6 +55,9 @@ interface ProjectCreatePageProps {
 
 export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => {
   const [lastResult, setLastResult] = useState<ProjectCreationResponse | null>(null)
+  const [useRandomData, setUseRandomData] = useState(false)
+  const [formKey, setFormKey] = useState(0)
+  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(createDefaultValues())
 
   const {
     control,
@@ -61,14 +67,20 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(projectSchema),
-    defaultValues: createDefaultValues(),
+    defaultValues: formDefaultValues,
     mode: 'onBlur',
   })
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: 'workPlanStages',
   })
+
+  // Force update form when defaultValues change
+  useEffect(() => {
+    reset(formDefaultValues)
+    replace(formDefaultValues.workPlanStages)
+  }, [formDefaultValues]) // Intentionally omit reset and replace from deps
 
   const createProjectMutation = useCreateProject()
 
@@ -96,6 +108,20 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
     remove(index)
   }
 
+  const handleToggleRandomData = (checked: boolean) => {
+    setUseRandomData(checked)
+    if (checked) {
+      const randomData = generateRandomProjectData()
+      console.log('Generated random data:', randomData)
+      console.log('Work plan stages count:', randomData.workPlanStages.length)
+      setFormDefaultValues(randomData)
+      onShowMessage('Formulario rellenado con datos aleatorios', 'info')
+    } else {
+      const defaultValues = createDefaultValues()
+      setFormDefaultValues(defaultValues)
+    }
+  }
+
   const isLoading = isSubmitting || createProjectMutation.isPending
 
   return (
@@ -103,12 +129,32 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
       <Typography variant="h4" gutterBottom>
         Alta de proyecto
       </Typography>
-      <Typography variant="body1" color="text.secondary" mb={4}>
+      <Typography variant="body1" color="text.secondary" mb={2}>
         Complete la información del proyecto y las etapas del plan de trabajo. Al enviar, se iniciará la instancia del
         proceso en Bonita con el volumen de datos requerido.
       </Typography>
 
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
+      <Box mb={3}>
+        <Tooltip title="Rellena automáticamente el formulario con datos de prueba coherentes">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useRandomData}
+                onChange={(e) => handleToggleRandomData(e.target.checked)}
+                color="primary"
+              />
+            }
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Casino fontSize="small" />
+                <Typography variant="body2">Datos aleatorios</Typography>
+              </Stack>
+            }
+          />
+        </Tooltip>
+      </Box>
+
+      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate key={formKey}>
         <Stack spacing={4}>
           <Paper elevation={2} sx={{ p: { xs: 2, sm: 3 } }}>
             <Typography variant="h6" gutterBottom>
@@ -116,117 +162,217 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
             </Typography>
               <Stack spacing={2}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="Nombre del proyecto"
-                    placeholder="Mejora de infraestructura comunitaria"
-                    fullWidth
-                    {...register('projectName')}
-                    error={!!errors.projectName}
-                    helperText={errors.projectName?.message}
+                  <Controller
+                    name="projectName"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Nombre del proyecto"
+                        placeholder="Mejora de infraestructura comunitaria"
+                        fullWidth
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.projectName}
+                        helperText={errors.projectName?.message}
+                      />
+                    )}
                   />
-                  <TextField
-                    label="Categoría"
-                    placeholder="Infraestructura / Energía / Salud"
-                    fullWidth
-                    {...register('projectCategory')}
-                    error={!!errors.projectCategory}
-                    helperText={errors.projectCategory?.message}
+                  <Controller
+                    name="projectCategory"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Categoría"
+                        placeholder="Infraestructura / Energía / Salud"
+                        fullWidth
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.projectCategory}
+                        helperText={errors.projectCategory?.message}
+                      />
+                    )}
                   />
                 </Stack>
-              <TextField
-                label="Descripción"
-                placeholder="Breve resumen del objetivo, alcance y resultados esperados..."
-                fullWidth
-                multiline
-                minRows={4}
-                {...register('projectDescription')}
-                error={!!errors.projectDescription}
-                helperText={errors.projectDescription?.message}
+              <Controller
+                name="projectDescription"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    label="Descripción"
+                    placeholder="Breve resumen del objetivo, alcance y resultados esperados..."
+                    fullWidth
+                    multiline
+                    minRows={4}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    error={!!errors.projectDescription}
+                    helperText={errors.projectDescription?.message}
+                  />
+                )}
               />
               <Stack spacing={2}>
-                <TextField
-                  label="Organización solicitante"
-                  placeholder="ONG Hope Builders"
-                  fullWidth
-                  {...register('requestingOrganization')}
-                  error={!!errors.requestingOrganization}
-                  helperText={errors.requestingOrganization?.message}
+                <Controller
+                  name="requestingOrganization"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      label="Organización solicitante"
+                      placeholder="ONG Hope Builders"
+                      fullWidth
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      error={!!errors.requestingOrganization}
+                      helperText={errors.requestingOrganization?.message}
+                    />
+                  )}
                 />
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="Email de contacto"
-                    placeholder="contacto@ong.org"
-                    fullWidth
-                    {...register('contactEmail')}
-                    error={!!errors.contactEmail}
-                    helperText={errors.contactEmail?.message}
+                  <Controller
+                    name="contactEmail"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Email de contacto"
+                        placeholder="contacto@ong.org"
+                        fullWidth
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.contactEmail}
+                        helperText={errors.contactEmail?.message}
+                      />
+                    )}
                   />
-                  <TextField
-                    label="Teléfono"
-                    placeholder="+54 11 5555-5555"
-                    fullWidth
-                    {...register('contactPhone')}
-                    error={!!errors.contactPhone}
-                    helperText={errors.contactPhone?.message}
+                  <Controller
+                    name="contactPhone"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Teléfono"
+                        placeholder="+54 11 5555-5555"
+                        fullWidth
+                        value={field.value || ''}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.contactPhone}
+                        helperText={errors.contactPhone?.message}
+                      />
+                    )}
                   />
                 </Stack>
               </Stack>
               <Stack spacing={2}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="Presupuesto estimado"
-                    type="number"
-                    inputProps={{ min: 0, step: 1000 }}
-                    fullWidth
-                    {...register('estimatedBudget', { valueAsNumber: true })}
-                    error={!!errors.estimatedBudget}
-                    helperText={errors.estimatedBudget?.message}
+                  <Controller
+                    name="estimatedBudget"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Presupuesto estimado"
+                        type="number"
+                        inputProps={{ min: 0, step: 1000 }}
+                        fullWidth
+                        value={field.value}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        onBlur={field.onBlur}
+                        error={!!errors.estimatedBudget}
+                        helperText={errors.estimatedBudget?.message}
+                      />
+                    )}
                   />
-                  <TextField
-                    label="Moneda"
-                    placeholder="USD"
-                    inputProps={{ maxLength: 3 }}
-                    fullWidth
-                    {...register('currency')}
-                    error={!!errors.currency}
-                    helperText={errors.currency?.message}
+                  <Controller
+                    name="currency"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Moneda"
+                        placeholder="USD"
+                        inputProps={{ maxLength: 3 }}
+                        fullWidth
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.currency}
+                        helperText={errors.currency?.message}
+                      />
+                    )}
                   />
                 </Stack>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="Fecha de inicio"
-                    type="date"
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
-                    {...register('startDate')}
-                    error={!!errors.startDate}
-                    helperText={errors.startDate?.message}
+                  <Controller
+                    name="startDate"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Fecha de inicio"
+                        type="date"
+                        fullWidth
+                        InputLabelProps={{ shrink: true }}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.startDate}
+                        helperText={errors.startDate?.message}
+                      />
+                    )}
                   />
-                  <TextField
-                    label="Fecha de fin"
-                    type="date"
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
-                    {...register('endDate')}
-                    error={!!errors.endDate}
-                    helperText={errors.endDate?.message}
+                  <Controller
+                    name="endDate"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        label="Fecha de fin"
+                        type="date"
+                        fullWidth
+                        InputLabelProps={{ shrink: true }}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={!!errors.endDate}
+                        helperText={errors.endDate?.message}
+                      />
+                    )}
                   />
                 </Stack>
               </Stack>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-                <TextField select label="Prioridad" fullWidth defaultValue="medium" {...register('priorityLevel')}>
-                  <MenuItem value="low">Baja</MenuItem>
-                  <MenuItem value="medium">Media</MenuItem>
-                  <MenuItem value="high">Alta</MenuItem>
-                  <MenuItem value="critical">Crítica</MenuItem>
-                </TextField>
-                <TextField
-                  label="URL documentación de respaldo (opcional)"
-                  placeholder="https://drive.google.com/..."
-                  fullWidth
-                  {...register('supportingDocsUrl')}
-                  error={!!errors.supportingDocsUrl}
-                  helperText={errors.supportingDocsUrl?.message}
+                <Controller
+                  name="priorityLevel"
+                  control={control}
+                  render={({ field: controllerField }) => (
+                    <TextField
+                      select
+                      label="Prioridad"
+                      fullWidth
+                      value={controllerField.value || ''}
+                      onChange={controllerField.onChange}
+                    >
+                      <MenuItem value="low">Baja</MenuItem>
+                      <MenuItem value="medium">Media</MenuItem>
+                      <MenuItem value="high">Alta</MenuItem>
+                      <MenuItem value="critical">Crítica</MenuItem>
+                    </TextField>
+                  )}
+                />
+                <Controller
+                  name="supportingDocsUrl"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      label="URL documentación de respaldo (opcional)"
+                      placeholder="https://drive.google.com/..."
+                      fullWidth
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      error={!!errors.supportingDocsUrl}
+                      helperText={errors.supportingDocsUrl?.message}
+                    />
+                  )}
                 />
               </Stack>
             </Stack>
@@ -261,79 +407,133 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
                     <Divider />
                     <Stack spacing={2}>
                       <Stack spacing={2}>
-                        <TextField
-                          label="Nombre de la etapa"
-                          placeholder="Relevamiento en campo"
-                          fullWidth
-                          {...register(`workPlanStages.${index}.stageName` as const)}
-                          error={!!errors.workPlanStages?.[index]?.stageName}
-                          helperText={errors.workPlanStages?.[index]?.stageName?.message}
+                        <Controller
+                          name={`workPlanStages.${index}.stageName` as const}
+                          control={control}
+                          render={({ field }) => (
+                            <TextField
+                              label="Nombre de la etapa"
+                              placeholder="Relevamiento en campo"
+                              fullWidth
+                              value={field.value}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              error={!!errors.workPlanStages?.[index]?.stageName}
+                              helperText={errors.workPlanStages?.[index]?.stageName?.message}
+                            />
+                          )}
                         />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                          <TextField
-                            label="Inicio"
-                            type="date"
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            {...register(`workPlanStages.${index}.stageStart` as const)}
-                            error={!!errors.workPlanStages?.[index]?.stageStart}
-                            helperText={errors.workPlanStages?.[index]?.stageStart?.message}
+                          <Controller
+                            name={`workPlanStages.${index}.stageStart` as const}
+                            control={control}
+                            render={({ field }) => (
+                              <TextField
+                                label="Inicio"
+                                type="date"
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                value={field.value}
+                                onChange={field.onChange}
+                                onBlur={field.onBlur}
+                                error={!!errors.workPlanStages?.[index]?.stageStart}
+                                helperText={errors.workPlanStages?.[index]?.stageStart?.message}
+                              />
+                            )}
                           />
-                          <TextField
-                            label="Fin"
-                            type="date"
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            {...register(`workPlanStages.${index}.stageEnd` as const)}
-                            error={!!errors.workPlanStages?.[index]?.stageEnd}
-                            helperText={errors.workPlanStages?.[index]?.stageEnd?.message}
+                          <Controller
+                            name={`workPlanStages.${index}.stageEnd` as const}
+                            control={control}
+                            render={({ field }) => (
+                              <TextField
+                                label="Fin"
+                                type="date"
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                value={field.value}
+                                onChange={field.onChange}
+                                onBlur={field.onBlur}
+                                error={!!errors.workPlanStages?.[index]?.stageEnd}
+                                helperText={errors.workPlanStages?.[index]?.stageEnd?.message}
+                              />
+                            )}
                           />
                         </Stack>
                       </Stack>
                       <Stack spacing={2}>
-                        <TextField
-                          select
-                          label="Tipo de soporte requerido"
-                          fullWidth
-                          defaultValue={field.supportType}
-                          {...register(`workPlanStages.${index}.supportType` as const)}
-                        >
-                          <MenuItem value="financial">Financiamiento</MenuItem>
-                          <MenuItem value="materials">Materiales</MenuItem>
-                          <MenuItem value="labor">Mano de obra</MenuItem>
-                          <MenuItem value="logistics">Logística</MenuItem>
-                          <MenuItem value="other">Otro</MenuItem>
-                        </TextField>
+                        <Controller
+                          name={`workPlanStages.${index}.supportType` as const}
+                          control={control}
+                          render={({ field: controllerField }) => (
+                            <TextField
+                              select
+                              label="Tipo de soporte requerido"
+                              fullWidth
+                              value={controllerField.value || ''}
+                              onChange={controllerField.onChange}
+                            >
+                              <MenuItem value="financial">Financiamiento</MenuItem>
+                              <MenuItem value="materials">Materiales</MenuItem>
+                              <MenuItem value="labor">Mano de obra</MenuItem>
+                              <MenuItem value="logistics">Logística</MenuItem>
+                              <MenuItem value="other">Otro</MenuItem>
+                            </TextField>
+                          )}
+                        />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                          <TextField
-                            label="Monto estimado"
-                            type="number"
-                            inputProps={{ min: 0, step: 100 }}
-                            fullWidth
-                            {...register(`workPlanStages.${index}.estimatedAmount` as const, { valueAsNumber: true })}
-                            error={!!errors.workPlanStages?.[index]?.estimatedAmount}
-                            helperText={errors.workPlanStages?.[index]?.estimatedAmount?.message}
+                          <Controller
+                            name={`workPlanStages.${index}.estimatedAmount` as const}
+                            control={control}
+                            render={({ field }) => (
+                              <TextField
+                                label="Monto estimado"
+                                type="number"
+                                inputProps={{ min: 0, step: 100 }}
+                                fullWidth
+                                value={field.value || ''}
+                                onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                                onBlur={field.onBlur}
+                                error={!!errors.workPlanStages?.[index]?.estimatedAmount}
+                                helperText={errors.workPlanStages?.[index]?.estimatedAmount?.message}
+                              />
+                            )}
                           />
-                          <TextField
-                            label="Moneda del monto"
-                            placeholder="USD"
-                            inputProps={{ maxLength: 3 }}
-                            fullWidth
-                            {...register(`workPlanStages.${index}.amountCurrency` as const)}
-                            error={!!errors.workPlanStages?.[index]?.amountCurrency}
-                            helperText={errors.workPlanStages?.[index]?.amountCurrency?.message}
+                          <Controller
+                            name={`workPlanStages.${index}.amountCurrency` as const}
+                            control={control}
+                            render={({ field }) => (
+                              <TextField
+                                label="Moneda del monto"
+                                placeholder="USD"
+                                inputProps={{ maxLength: 3 }}
+                                fullWidth
+                                value={field.value || ''}
+                                onChange={field.onChange}
+                                onBlur={field.onBlur}
+                                error={!!errors.workPlanStages?.[index]?.amountCurrency}
+                                helperText={errors.workPlanStages?.[index]?.amountCurrency?.message}
+                              />
+                            )}
                           />
                         </Stack>
                       </Stack>
-                      <TextField
-                        label="Descripción del pedido"
-                        placeholder="Detalle del recurso requerido, alcance y observaciones..."
-                        fullWidth
-                        multiline
-                        minRows={3}
-                        {...register(`workPlanStages.${index}.description` as const)}
-                        error={!!errors.workPlanStages?.[index]?.description}
-                        helperText={errors.workPlanStages?.[index]?.description?.message}
+                      <Controller
+                        name={`workPlanStages.${index}.description` as const}
+                        control={control}
+                        render={({ field }) => (
+                          <TextField
+                            label="Descripción del pedido"
+                            placeholder="Detalle del recurso requerido, alcance y observaciones..."
+                            fullWidth
+                            multiline
+                            minRows={3}
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            error={!!errors.workPlanStages?.[index]?.description}
+                            helperText={errors.workPlanStages?.[index]?.description?.message}
+                          />
+                        )}
                       />
                     </Stack>
                   </Stack>

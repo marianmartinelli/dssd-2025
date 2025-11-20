@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ProjectFormValues, ProjectCreationResponse } from '../types/project'
+import type { ProjectFormValues, ProjectCreationResponse, ProjectListItem, ProjectStatus } from '../types/project'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1',
@@ -23,6 +23,27 @@ export const login = async (username: string, password: string): Promise<void> =
 
 export const createProject = async (payload: ProjectFormValues): Promise<ProjectCreationResponse> => {
   const { data } = await api.post<ProjectCreationResponse>('/projects', payload)
+  return data
+}
+
+export const fetchProjects = async (
+  statusFilter?: ProjectStatus,
+  ownerOnly?: boolean
+): Promise<ProjectListItem[]> => {
+  const params = new URLSearchParams()
+
+  if (statusFilter) {
+    params.append('status_filter', statusFilter)
+  }
+
+  if (ownerOnly !== undefined) {
+    params.append('owner_only', String(ownerOnly))
+  }
+
+  const queryString = params.toString()
+  const url = `/projects${queryString ? `?${queryString}` : ''}`
+
+  const { data } = await api.get<ProjectListItem[]>(url)
   return data
 }
 

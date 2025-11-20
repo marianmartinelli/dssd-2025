@@ -10,7 +10,6 @@ services:
       POSTGRES_PASSWORD: projectplanning
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -22,14 +21,14 @@ services:
   # Backend API
   backend:
     build:
-      context: ../backend
+      context: ../local-bff
       dockerfile: Dockerfile
     env_file:
-      - ../backend/.env
+      - ../local-bff/.env
     ports:
       - "8000:8000"
     volumes:
-      - ../backend:/app
+      - ../local-bff:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["--reload"]

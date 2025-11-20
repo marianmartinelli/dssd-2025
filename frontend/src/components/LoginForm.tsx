@@ -14,8 +14,8 @@ import { z } from 'zod'
 import { login } from '../api/bonita'
 
 const loginSchema = z.object({
-  username: z.email('Debe ingresar un email válido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  username: z.string(),
+  password: z.string(),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
@@ -61,8 +61,8 @@ export const LoginForm = ({ onSuccess, onError }: LoginFormProps) => {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} display="grid" gap={2}>
         <TextField
-          label="Email"
-          autoComplete="email"
+          label="Usuario"
+          autoComplete="username"
           {...register('username')}
           error={!!errors.username}
           helperText={errors.username?.message}
