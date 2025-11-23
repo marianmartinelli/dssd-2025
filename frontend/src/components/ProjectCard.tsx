@@ -5,8 +5,10 @@ import {
   Box,
   Chip,
   Stack,
+  CardActionArea,
 } from '@mui/material'
 import { format } from 'date-fns'
+import { useNavigate } from 'react-router-dom'
 import type { ProjectListItem, ProjectStatus } from '../types/project'
 
 interface ProjectCardProps {
@@ -32,59 +34,67 @@ const getStatusColor = (status: ProjectStatus): 'info' | 'success' | 'warning' =
 }
 
 export const ProjectCard = ({ project }: ProjectCardProps) => {
+  const navigate = useNavigate()
+
+  const handleClick = () => {
+    navigate(`/projects/${project.id}`)
+  }
+
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardContent>
-        <Stack spacing={2}>
-          <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-            <Typography variant="h6" component="h3" gutterBottom>
-              {project.projectName}
-            </Typography>
-            <Chip
-              label={getStatusLabel(project.status)}
-              color={getStatusColor(project.status)}
-              size="small"
-            />
-          </Box>
+      <CardActionArea onClick={handleClick}>
+        <CardContent>
+          <Stack spacing={2}>
+            <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+              <Typography variant="h6" component="h3" gutterBottom>
+                {project.projectName}
+              </Typography>
+              <Chip
+                label={getStatusLabel(project.status)}
+                color={getStatusColor(project.status)}
+                size="small"
+              />
+            </Box>
 
-          {project.projectDescription && (
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {project.projectDescription}
-            </Typography>
-          )}
-
-          <Stack direction="row" spacing={2} flexWrap="wrap">
-            {project.startDate && project.endDate && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Fechas:
-                </Typography>
-                <Typography variant="body2">
-                  {format(new Date(project.startDate), 'dd/MM/yyyy')} -{' '}
-                  {format(new Date(project.endDate), 'dd/MM/yyyy')}
-                </Typography>
-              </Box>
+            {project.projectDescription && (
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {project.projectDescription}
+              </Typography>
             )}
 
-            {project.estimatedBudget !== undefined && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Presupuesto:
-                </Typography>
-                <Typography variant="body2">
-                  {project.currency} {project.estimatedBudget.toLocaleString()}
-                </Typography>
-              </Box>
+            <Stack direction="row" spacing={2} flexWrap="wrap">
+              {project.startDate && project.endDate && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Fechas:
+                  </Typography>
+                  <Typography variant="body2">
+                    {format(new Date(project.startDate), 'dd/MM/yyyy')} -{' '}
+                    {format(new Date(project.endDate), 'dd/MM/yyyy')}
+                  </Typography>
+                </Box>
+              )}
+
+              {project.estimatedBudget !== undefined && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Presupuesto:
+                  </Typography>
+                  <Typography variant="body2">
+                    {project.currency} {project.estimatedBudget.toLocaleString()}
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+
+            {project.workPlanStages.length > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                {project.workPlanStages.length} etapa{project.workPlanStages.length !== 1 ? 's' : ''}
+              </Typography>
             )}
           </Stack>
-
-          {project.workPlanStages.length > 0 && (
-            <Typography variant="caption" color="text.secondary">
-              {project.workPlanStages.length} etapa{project.workPlanStages.length !== 1 ? 's' : ''}
-            </Typography>
-          )}
-        </Stack>
-      </CardContent>
+        </CardContent>
+      </CardActionArea>
     </Card>
   )
 }

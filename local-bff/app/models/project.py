@@ -28,6 +28,7 @@ class Project(Base):
     # Relationships
     work_plan_stages = relationship("WorkPlanStage", back_populates="project")
     organization = relationship("Organization", back_populates="projects")
+    observations = relationship("Observation", back_populates="project", lazy="selectin")
 
 class WorkPlanStage(Base):
     __tablename__ = "work_plan_stages"
@@ -59,8 +60,21 @@ class CollaborationRequest(Base):
     requested_date = Column(DateTime, default=datetime.utcnow)
     is_approved = Column(Boolean, default=False)
     is_completed = Column(Boolean, default=False)
-    committed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    committed_by = Column(String, nullable=False)  # Username from Bonita or local DB
 
     # Relationships
     stage = relationship("WorkPlanStage", back_populates="collaboration_requests")
-    committed_user = relationship("User", foreign_keys=[committed_by])
+
+class Observation(Base):
+    __tablename__ = "observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String, nullable=False)  # User ID from Bonita or local DB
+    is_resolved = Column(Boolean, default=False)
+
+    # Relationships
+    project = relationship("Project", back_populates="observations")

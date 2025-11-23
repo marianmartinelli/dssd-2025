@@ -1,7 +1,7 @@
 # Import all models to ensure SQLAlchemy can resolve relationships
 from app.models.organization import Organization
 from app.models.user import User
-from app.models.project import Project, WorkPlanStage, CollaborationRequest
+from app.models.project import Project, WorkPlanStage, CollaborationRequest, Observation
 
 __all__ = [
     "Organization",
@@ -9,4 +9,5 @@ __all__ = [
     "Project",
     "WorkPlanStage",
     "CollaborationRequest",
+    "Observation",
 ]

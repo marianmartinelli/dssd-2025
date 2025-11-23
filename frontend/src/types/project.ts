@@ -26,6 +26,36 @@ export interface WorkPlanStageResponse {
   isCompleted?: boolean
 }
 
+export interface ObservationResponse {
+  id: number
+  projectId: number
+  title: string
+  description?: string
+  createdDate?: string
+  createdBy: string
+  isResolved?: boolean
+}
+
+export interface ObservationCreate {
+  projectId: number
+  title: string
+  description?: string
+}
+
+export interface CollaborationRequestResponse {
+  id: number
+  stageId: number
+  workPlanStageId?: number
+  title: string
+  description?: string
+  requestedAmount?: number
+  amountCurrency?: string
+  requestedDate?: string
+  isApproved?: boolean
+  isCompleted?: boolean
+  committedBy: string
+}
+
 export interface ProjectListItem {
   id: number
   projectName: string
@@ -46,6 +76,7 @@ export interface ProjectListItem {
   organizationId?: number
   status: ProjectStatus
   workPlanStages: WorkPlanStageResponse[]
+  observations: ObservationResponse[]
 }
 
 export interface ProjectsFilters {

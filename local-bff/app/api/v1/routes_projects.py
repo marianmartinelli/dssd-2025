@@ -5,9 +5,9 @@ from typing import List, Optional
 from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
 from app.core.database import get_db_session
-from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse
+from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ObservationCreate, ObservationResponse
 from app.services.bonita_client import instantiate_project, BonitaClient
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, create_observation_request, list_observation_by_project, resolve_observation_request
 
 router = APIRouter()
 settings = get_settings()
@@ -279,4 +279,75 @@ async def complete_stage(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
+        )
+
+@router.post(
+    "/observations",
+    response_model=ObservationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear observacion a un proyecto",
+)
+async def create_observation(
+    payload: ObservationCreate,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ObservationResponse:
+    """
+    Crea una observacion asociada al proyecto.
+    
+    El body debe incluir:
+    - projectId: ID del proyecto
+    - title: título de la observacion
+    - description: descripción (opcional)
+
+    """
+    observation = await create_observation_request(
+        project_id=payload.project_id,
+        payload=payload,
+        current_user=current_user,
+        session=session,
+    )
+    return ObservationResponse.model_validate(observation)
+
+@router.get(
+    "/{project_id}/observations",
+    response_model=List[ObservationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Listar observaciones de un proyecto",
+)
+async def get_project_observations(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> List[ObservationResponse]:
+    """
+    Recupera todas las observaciones asociadas al proyecto indicado.
+    """
+    observations = await list_observation_by_project(project_id, current_user, session)
+    # Convertir a Pydantic (Pydantic v2): model_validate desde atributos/ORM
+    return [ObservationResponse.model_validate(o) for o in observations]
+
+@router.put(
+    "/observations/{observation_id}/resolve",
+    response_model=ObservationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Marcar observación como resuelta",
+)
+async def resolve_observation(
+    observation_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ObservationResponse:
+    """
+    Marca una observación como resuelta (is_resolved = true).
+    """
+    try:
+        observation = await resolve_observation_request(observation_id, session)
+        return ObservationResponse.model_validate(observation)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al resolver observación: {str(e)}",
         )
