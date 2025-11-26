@@ -22,9 +22,13 @@ class Project(Base):
     submission_timestamp = Column(DateTime, nullable=True)
     initiator_user_id = Column(String, nullable=True)
     case_id = Column(Integer, nullable=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    status = Column(String, default="in_progress", nullable=False)
 
     # Relationships
     work_plan_stages = relationship("WorkPlanStage", back_populates="project")
+    organization = relationship("Organization", back_populates="projects")
+    observations = relationship("Observation", back_populates="project", lazy="selectin")
 
 class WorkPlanStage(Base):
     __tablename__ = "work_plan_stages"
@@ -56,8 +60,23 @@ class CollaborationRequest(Base):
     requested_date = Column(DateTime, default=datetime.utcnow)
     is_approved = Column(Boolean, default=False)
     is_completed = Column(Boolean, default=False)
-    committed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    committed_by = Column(String, nullable=False)  # Username from Bonita or local DB
 
     # Relationships
     stage = relationship("WorkPlanStage", back_populates="collaboration_requests")
-    committed_user = relationship("User", foreign_keys=[committed_by])
+
+class Observation(Base):
+    __tablename__ = "observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String, nullable=False)  # User ID from Bonita or local DB
+    is_resolved = Column(Boolean, default=False)
+    case_id = Column(Integer, nullable=True)  # Bonita case ID if process was instantiated
+    task_id = Column(String, nullable=True)  # Bonita task ID for observation resolution
+
+    # Relationships
+    project = relationship("Project", back_populates="observations")

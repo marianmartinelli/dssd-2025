@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from structlog import get_logger
 
 from app.core.config import get_settings
-from app.schemas.project import ProjectCreate, WorkPlanStage
+from app.schemas.project import ProjectCreate, WorkPlanStage, ObservationCreate
 from app.services.bonita_session_manager import BonitaSession
 
 logger = get_logger()
@@ -48,6 +48,24 @@ class BonitaClient:
 
         return data[0]["id"]
 
+    async def _get_observation_process_definition_id(self) -> str:
+        """Obtiene el ID de la definición del proceso de observaciones de Bonita."""
+        params = {
+            "f": [f"name={settings.bonita_observation_process_definition}", f"version={settings.bonita_observation_process_version}"],
+        }
+        response = await self.session.client.get(
+            "/bonita/API/bpm/process",
+            params=params,
+            headers=self.session.auth_headers
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        if not data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bonita observation process definition not found")
+
+        return data[0]["id"]
+
     async def instantiate_process(self, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
         """Instancia un proceso de Bonita con los datos del proyecto."""
         process_id = await self._get_process_definition_id()
@@ -68,6 +86,32 @@ class BonitaClient:
                 payload=contract_payload,
             )
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bonita process instantiation failed")
+
+        response_data = response.json()
+        response_data["processDefinitionId"] = process_id
+        return response_data
+
+    async def instantiate_observation_process(self, observation: "ObservationCreate", initiator_username: str) -> Dict[str, Any]:
+        """Instancia un proceso de observación en Bonita con los datos de la observación."""
+        # Obtener el process_id específico para observaciones (proceso separado)
+        process_id = await self._get_observation_process_definition_id()
+
+        contract_payload = self._build_observation_contract_payload(observation, initiator_username)
+        response = await self.session.client.post(
+            f"/bonita/API/bpm/process/{process_id}/instantiation",
+            headers=self.session.auth_headers,
+            content=json.dumps(contract_payload),
+        )
+
+        if response.status_code not in (status.HTTP_200_OK, status.HTTP_201_CREATED):
+            logger.error(
+                "Bonita observation instantiation failed",
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                body=response.text,
+                payload=contract_payload,
+            )
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bonita observation process instantiation failed")
 
         response_data = response.json()
         response_data["processDefinitionId"] = process_id
@@ -105,7 +149,21 @@ class BonitaClient:
             "amountCurrency": stage.amount_currency,
         }
 
-    async def _get_task_by_case_id(self, case_id: str, max_retries: int = 10, retry_delay: float = 0.5) -> str:
+    def _build_observation_contract_payload(self, observation: "ObservationCreate", initiator_username: str) -> Dict[str, Any]:
+        """Construye el payload del contrato para una observación."""
+        from datetime import datetime
+        return {
+            "observacionContrato": {
+                "project_id": observation.project_id,
+                "title": observation.title,
+                "description": observation.description or "",
+                "created_date": datetime.utcnow().isoformat(),
+                "created_by": initiator_username,
+                "is_resolved": False,
+            }
+        }
+
+    async def _get_task_by_case_id(self, case_id: str, max_retries: int = 100, retry_delay: float = 0.5) -> str:
         """Obtiene el taskId a partir del caseId con reintentos"""
         for attempt in range(max_retries):
             params = {"f": f"caseId={case_id}"}
@@ -125,6 +183,14 @@ class BonitaClient:
                 raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to get task from Bonita")
 
             data = response.json()
+            logger.info(
+                "Task API response",
+                case_id=case_id,
+                attempt=attempt + 1,
+                response_data=data,
+                response_length=len(data) if data else 0,
+            )
+            
             if data:
                 task_id = data[0]["id"]
                 logger.info("Task retrieved", case_id=case_id, task_id=task_id, attempt=attempt + 1)
@@ -262,4 +328,59 @@ async def instantiate_project(client: BonitaClient, project: ProjectCreate, init
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing project workflow: {str(e)}"
+        )
+
+
+
+async def instantiate_observation(client: BonitaClient, observation: ObservationCreate, initiator_username: str) -> Dict[str, Any]:
+    """
+    Instancia una observación en Bonita usando un cliente autenticado.
+    Crea el caso, obtiene la tarea y la asigna al usuario, pero NO la completa.
+    La tarea se completará cuando se resuelva la observación.
+
+    Args:
+        client: Cliente de Bonita ya autenticado con las credenciales del usuario
+        observation: Datos de la observación a crear
+        initiator_username: Username del usuario que inicia el proceso
+
+    Returns:
+        Diccionario con caseId, processDefinitionId y taskId
+
+    Raises:
+        HTTPException: Si ocurre algún error durante el proceso
+    """
+    try:
+        # Instanciar el proceso de observación en Bonita
+        response = await client.instantiate_observation_process(observation, initiator_username)
+
+        if not response.get("caseId"):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Case ID not found in Bonita response")
+
+        logger.info("Bonita observation case created", response=response)
+        case_id = response.get("caseId")
+        processDefinitionId = response.get("processDefinitionId")
+
+        # Obtener y asignar la tarea inicial (pero NO completarla)
+        task_id = await client._get_task_by_case_id(case_id)
+        logger.info("Task ID obtained for observation", task_id=task_id)
+
+        user_id = await client._get_logged_user()
+        logger.info("User ID obtained", user_id=user_id)
+
+        await client.assign_task_to_user(task_id, user_id)
+        logger.info("Observation task assigned successfully (not completed yet)")
+
+        return {
+            "caseId": case_id,
+            "processDefinitionId": processDefinitionId,
+            "taskId": task_id,
+        }
+    except HTTPException as http_exc:
+        logger.error("HTTP error in instantiate_observation", status_code=http_exc.status_code, detail=http_exc.detail)
+        raise
+    except Exception as e:
+        logger.error("Unexpected error in instantiate_observation", error=str(e), error_type=type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing observation workflow: {str(e)}"
         )
