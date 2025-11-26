@@ -6,8 +6,8 @@ from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ObservationCreate, ObservationResponse
-from app.services.bonita_client import instantiate_project, BonitaClient
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, create_observation_request, list_observation_by_project, resolve_observation_request
+from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
 
 router = APIRouter()
 settings = get_settings()
@@ -301,13 +301,39 @@ async def create_observation(
     - description: descripción (opcional)
 
     """
-    observation = await create_observation_request(
-        project_id=payload.project_id,
-        payload=payload,
-        current_user=current_user,
-        session=session,
-    )
-    return ObservationResponse.model_validate(observation)
+    try:
+        case_id: Optional[int] = None
+        task_id: Optional[str] = None
+
+        if settings.use_bonita:
+            # Obtener cliente de Bonita y crear caso
+            bonita_client = await get_bonita_client(current_user)
+            response = await instantiate_observation(bonita_client, payload, current_user["username"])
+
+            # Validar respuesta
+            if not response or not response.get("caseId"):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Invalid response from Bonita: Missing caseId",
+                )
+
+            case_id = int(response["caseId"])
+            task_id = response.get("taskId")
+
+        # Guardar observacion en la base de datos (con o sin case_id/task_id)
+        observation = await save_observation(project_id=payload.project_id, payload=payload, current_user=current_user, session=session, case_id=case_id, task_id=task_id)
+        
+        return ObservationResponse.model_validate(observation)
+
+    except HTTPException as http_exc:
+        raise http_exc
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}",
+        )
+    
 
 @router.get(
     "/{project_id}/observations",
@@ -327,7 +353,7 @@ async def get_project_observations(
     # Convertir a Pydantic (Pydantic v2): model_validate desde atributos/ORM
     return [ObservationResponse.model_validate(o) for o in observations]
 
-@router.put(
+@router.post(
     "/observations/{observation_id}/resolve",
     response_model=ObservationResponse,
     status_code=status.HTTP_200_OK,
@@ -340,9 +366,14 @@ async def resolve_observation(
 ) -> ObservationResponse:
     """
     Marca una observación como resuelta (is_resolved = true).
+    Si USE_BONITA está habilitado y la observación tiene un task_id, completa la tarea en Bonita.
     """
     try:
-        observation = await resolve_observation_request(observation_id, session)
+        bonita_client = None
+        if settings.use_bonita:
+            bonita_client = await get_bonita_client(current_user)
+        
+        observation = await resolve_observation_service(observation_id, session, bonita_client)
         return ObservationResponse.model_validate(observation)
     except HTTPException:
         raise

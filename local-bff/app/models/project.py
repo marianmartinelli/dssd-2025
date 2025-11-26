@@ -75,6 +75,8 @@ class Observation(Base):
     created_date = Column(DateTime, default=datetime.utcnow)
     created_by = Column(String, nullable=False)  # User ID from Bonita or local DB
     is_resolved = Column(Boolean, default=False)
+    case_id = Column(Integer, nullable=True)  # Bonita case ID if process was instantiated
+    task_id = Column(String, nullable=True)  # Bonita task ID for observation resolution
 
     # Relationships
     project = relationship("Project", back_populates="observations")

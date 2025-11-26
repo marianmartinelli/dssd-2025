@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     bonita_api_password: str = Field(default="technical_user", description="[DEPRECATED] No longer used")
     bonita_process_definition: str = Field(default="ProjectPlanningProcess")
     bonita_process_version: str = Field(default="1.0")
+    bonita_observation_process_definition: str = Field(default="ObservationProcess")
+    bonita_observation_process_version: str = Field(default="1.0")
 
     model_config = {
         "env_file": ".env",
