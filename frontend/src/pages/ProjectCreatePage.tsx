@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { AlertColor } from '@mui/material'
 import {
   Box,
@@ -12,10 +12,8 @@ import {
   Divider,
   Tooltip,
   Alert,
-  FormControlLabel,
-  Switch,
 } from '@mui/material'
-import { Add, DeleteOutline, Save, Casino } from '@mui/icons-material'
+import { Add, DeleteOutline, Save } from '@mui/icons-material'
 import { useForm, useFieldArray, Controller, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { ProjectFormValues, ProjectCreationResponse, WorkPlanStageForm } from '../types/project'
@@ -55,9 +53,6 @@ interface ProjectCreatePageProps {
 
 export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => {
   const [lastResult, setLastResult] = useState<ProjectCreationResponse | null>(null)
-  const [useRandomData, setUseRandomData] = useState(false)
-  const [formKey, setFormKey] = useState(0)
-  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(createDefaultValues())
 
   const {
     control,
@@ -67,20 +62,14 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(projectSchema),
-    defaultValues: formDefaultValues,
+    defaultValues: generateRandomProjectData(),
     mode: 'onBlur',
   })
 
-  const { fields, append, remove, replace } = useFieldArray({
+  const { fields, append, remove } = useFieldArray({
     control,
     name: 'workPlanStages',
   })
-
-  // Force update form when defaultValues change
-  useEffect(() => {
-    reset(formDefaultValues)
-    replace(formDefaultValues.workPlanStages)
-  }, [formDefaultValues]) // Intentionally omit reset and replace from deps
 
   const createProjectMutation = useCreateProject()
 
@@ -89,7 +78,7 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
       const response = await createProjectMutation.mutateAsync(values)
       setLastResult(response)
       onShowMessage(`Caso creado en Bonita · Case ID ${response.caseId}`, 'success')
-      reset(createDefaultValues())
+      reset(generateRandomProjectData())
     } catch (error) {
       console.error(error)
       onShowMessage('No se pudo crear el proyecto. Reintente más tarde.', 'error')
@@ -108,20 +97,6 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
     remove(index)
   }
 
-  const handleToggleRandomData = (checked: boolean) => {
-    setUseRandomData(checked)
-    if (checked) {
-      const randomData = generateRandomProjectData()
-      console.log('Generated random data:', randomData)
-      console.log('Work plan stages count:', randomData.workPlanStages.length)
-      setFormDefaultValues(randomData)
-      onShowMessage('Formulario rellenado con datos aleatorios', 'info')
-    } else {
-      const defaultValues = createDefaultValues()
-      setFormDefaultValues(defaultValues)
-    }
-  }
-
   const isLoading = isSubmitting || createProjectMutation.isPending
 
   return (
@@ -134,27 +109,7 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
         proceso en Bonita con el volumen de datos requerido.
       </Typography>
 
-      <Box mb={3}>
-        <Tooltip title="Rellena automáticamente el formulario con datos de prueba coherentes">
-          <FormControlLabel
-            control={
-              <Switch
-                checked={useRandomData}
-                onChange={(e) => handleToggleRandomData(e.target.checked)}
-                color="primary"
-              />
-            }
-            label={
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Casino fontSize="small" />
-                <Typography variant="body2">Datos aleatorios</Typography>
-              </Stack>
-            }
-          />
-        </Tooltip>
-      </Box>
-
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate key={formKey}>
+      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={4}>
           <Paper elevation={2} sx={{ p: { xs: 2, sm: 3 } }}>
             <Typography variant="h6" gutterBottom>
