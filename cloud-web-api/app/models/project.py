@@ -27,7 +27,7 @@ class Project(Base):
 
     # Relationships
     work_plan_stages = relationship("WorkPlanStage", back_populates="project")
-    organization = relationship("Organization", back_populates="projects")
+    organization = relationship("Organization", back_populates="projects", lazy="selectin")
     observations = relationship("Observation", back_populates="project", lazy="selectin")
 
 class WorkPlanStage(Base):
