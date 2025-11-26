@@ -4,6 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.api.v1.router import api_router
 
+# Import all models to ensure they are registered with SQLAlchemy
+# This must happen before any database operations
+from app.models import Organization, User, Project, WorkPlanStage, CollaborationRequest, Observation  # noqa: F401
+
 settings = get_settings()
 
 app = FastAPI(
