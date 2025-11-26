@@ -5,9 +5,9 @@ from typing import List, Optional
 from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
 from app.core.database import get_db_session
-from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse
-from app.services.bonita_client import instantiate_project, BonitaClient
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage
+from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ObservationCreate, ObservationResponse
+from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
 
 router = APIRouter()
 settings = get_settings()
@@ -69,19 +69,39 @@ async def create_project(
     "",
     response_model=List[ProjectResponse],
     status_code=status.HTTP_200_OK,
-    summary="Listar todos los proyectos con sus etapas",
+    summary="Listar proyectos con filtros opcionales",
 )
 async def get_projects(
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
+    status_filter: Optional[str] = None,
+    owner_only: bool = False,
 ) -> List[ProjectResponse]:
     """
-    Lista todos los proyectos registrados con sus respectivas etapas del plan de trabajo.
+    Lista proyectos con filtros opcionales.
+
+    Filtros automáticos:
+    - Los proyectos se filtran por la organización del usuario autenticado.
+
+    Query parameters:
+    - status_filter: Filtrar por estado del proyecto (in_progress, completed, requesting_support).
+    - owner_only: Si es True, solo muestra proyectos donde el usuario actual es el iniciador.
 
     Requiere autenticación JWT.
     """
     try:
-        projects = await list_projects(session)
+        # Obtener organization_id del usuario autenticado
+        organization_id = current_user.get("organization_id")
+
+        # Si owner_only es True, filtrar por username del usuario actual
+        owner_username = current_user.get("username") if owner_only else None
+
+        projects = await list_projects(
+            session=session,
+            organization_id=organization_id,
+            status=status_filter,
+            owner_username=owner_username
+        )
         return [ProjectResponse.model_validate(project) for project in projects]
 
     except Exception as e:
@@ -259,4 +279,106 @@ async def complete_stage(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
+        )
+
+@router.post(
+    "/observations",
+    response_model=ObservationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear observacion a un proyecto",
+)
+async def create_observation(
+    payload: ObservationCreate,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ObservationResponse:
+    """
+    Crea una observacion asociada al proyecto.
+    
+    El body debe incluir:
+    - projectId: ID del proyecto
+    - title: título de la observacion
+    - description: descripción (opcional)
+
+    """
+    try:
+        case_id: Optional[int] = None
+        task_id: Optional[str] = None
+
+        if settings.use_bonita:
+            # Obtener cliente de Bonita y crear caso
+            bonita_client = await get_bonita_client(current_user)
+            response = await instantiate_observation(bonita_client, payload, current_user["username"])
+
+            # Validar respuesta
+            if not response or not response.get("caseId"):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Invalid response from Bonita: Missing caseId",
+                )
+
+            case_id = int(response["caseId"])
+            task_id = response.get("taskId")
+
+        # Guardar observacion en la base de datos (con o sin case_id/task_id)
+        observation = await save_observation(project_id=payload.project_id, payload=payload, current_user=current_user, session=session, case_id=case_id, task_id=task_id)
+        
+        return ObservationResponse.model_validate(observation)
+
+    except HTTPException as http_exc:
+        raise http_exc
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}",
+        )
+    
+
+@router.get(
+    "/{project_id}/observations",
+    response_model=List[ObservationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Listar observaciones de un proyecto",
+)
+async def get_project_observations(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> List[ObservationResponse]:
+    """
+    Recupera todas las observaciones asociadas al proyecto indicado.
+    """
+    observations = await list_observation_by_project(project_id, current_user, session)
+    # Convertir a Pydantic (Pydantic v2): model_validate desde atributos/ORM
+    return [ObservationResponse.model_validate(o) for o in observations]
+
+@router.post(
+    "/observations/{observation_id}/resolve",
+    response_model=ObservationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Marcar observación como resuelta",
+)
+async def resolve_observation(
+    observation_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ObservationResponse:
+    """
+    Marca una observación como resuelta (is_resolved = true).
+    Si USE_BONITA está habilitado y la observación tiene un task_id, completa la tarea en Bonita.
+    """
+    try:
+        bonita_client = None
+        if settings.use_bonita:
+            bonita_client = await get_bonita_client(current_user)
+        
+        observation = await resolve_observation_service(observation_id, session, bonita_client)
+        return ObservationResponse.model_validate(observation)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al resolver observación: {str(e)}",
         )
