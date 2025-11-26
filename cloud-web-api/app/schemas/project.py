@@ -17,6 +17,7 @@ class CamelCaseModel(BaseModel):
 
 SupportType = Literal["financial", "materials", "labor", "logistics", "other"]
 PriorityLevel = Literal["low", "medium", "high", "critical"]
+ProjectStatus = Literal["in_progress", "completed", "requesting_support"]
 
 
 class WorkPlanStage(CamelCaseModel):
@@ -86,7 +87,10 @@ class ProjectResponse(CamelCaseModel):
     submission_timestamp: Optional[datetime] = None
     initiator_user_id: Optional[str] = None
     case_id: Optional[int] = None
+    organization_id: Optional[int] = None
+    status: str = "in_progress"
     work_plan_stages: List[WorkPlanStageResponse] = []
+    observations: List[ObservationResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,6 +114,23 @@ class CollaborationRequestResponse(CamelCaseModel):
     requested_date: Optional[datetime] = None
     is_approved: Optional[bool] = False
     is_completed: Optional[bool] = False
-    committed_by: int
+    committed_by: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ObservationCreate(CamelCaseModel):
+    project_id: int
+    title: constr(strip_whitespace=True, min_length=3, max_length=150)
+    description: Optional[constr(strip_whitespace=True, min_length=5, max_length=1000)] = None
+
+
+class ObservationResponse(CamelCaseModel):
+    id: int
+    project_id: int
+    title: str
+    description: Optional[str] = None
+    created_date: Optional[datetime] = None
+    created_by: str
+    is_resolved: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
