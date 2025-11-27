@@ -7,6 +7,8 @@ import type {
   CollaborationCreatePayload,
   CollaborationRequestResponse,
   CurrentUserResponse,
+  ProjectStartTransitionResponse,
+  ProjectTransitionReadinessResponse,
 } from '../types/project'
 
 const api = axios.create({
@@ -102,6 +104,24 @@ export const createCollaboration = async (
   const { data } = await api.post<CollaborationRequestResponse>(
     '/projects/collaborations',
     payload
+  )
+  return data
+}
+
+export const checkProjectTransitionReadiness = async (
+  projectId: number
+): Promise<ProjectTransitionReadinessResponse> => {
+  const { data } = await api.get<ProjectTransitionReadinessResponse>(
+    `/projects/${projectId}/start/check`
+  )
+  return data
+}
+
+export const startProjectTransition = async (
+  projectId: number
+): Promise<ProjectStartTransitionResponse> => {
+  const { data } = await api.put<ProjectStartTransitionResponse>(
+    `/projects/${projectId}/start`
   )
   return data
 }

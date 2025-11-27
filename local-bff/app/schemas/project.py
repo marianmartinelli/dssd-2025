@@ -136,3 +136,30 @@ class ObservationResponse(CamelCaseModel):
     is_resolved: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StageCoverageInfo(CamelCaseModel):
+    stage_id: int
+    stage_name: str
+    has_approved_collaboration: bool
+    approved_count: int
+    total_count: int
+
+
+class ProjectTransitionReadinessResponse(CamelCaseModel):
+    project_id: int
+    current_status: str
+    total_stages: int
+    covered_stages: int
+    uncovered_stages: int
+    stages_coverage: List[StageCoverageInfo]
+
+
+class ProjectStartTransitionResponse(CamelCaseModel):
+    project_id: int
+    previous_status: str
+    new_status: str
+    total_stages: int
+    covered_stages: int
+    uncovered_stages: int
+    stages_coverage: List[StageCoverageInfo]

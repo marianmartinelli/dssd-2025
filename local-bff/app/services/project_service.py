@@ -44,7 +44,7 @@ async def save_project(
         initiator_user_id=current_user.get("username"),
         case_id=case_id,
         organization_id=current_user.get("organization_id"),
-        status="in_progress",
+        status="requesting_support",
     )
     db_session.add(project)
     await db_session.flush()
@@ -64,7 +64,7 @@ async def save_project(
         db_session.add(work_plan_stage)
 
     await db_session.commit()
-    await db_session.refresh(project, ["work_plan_stages"])
+    await db_session.refresh(project, ["work_plan_stages", "observations"])
     return project
 
 
@@ -151,7 +151,9 @@ async def create_collaboration_request(
         )
 
     # Get project to verify ownership
-    project = await session.get(Project, project_id)
+    stmt_project = select(Project).where(Project.id == project_id)
+    result_project = await session.execute(stmt_project)
+    project = result_project.scalar_one_or_none()
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -163,6 +165,14 @@ async def create_collaboration_request(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Los owners no pueden crear colaboraciones en sus propios proyectos"
+        )
+
+    # Verify project is in 'requesting_support' status
+    if project.status != "requesting_support":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pueden crear colaboraciones en proyectos que ya están en progreso o completados. "
+                   "Solo se aceptan colaboraciones durante la fase de solicitud de apoyo.",
         )
 
     # Create collaboration request
@@ -435,3 +445,185 @@ async def complete_work_plan_stage(
     except Exception as exc:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+async def check_project_transition_readiness(
+    project_id: int,
+    current_user: Dict,
+    session: AsyncSession,
+) -> Dict:
+    """
+    Verifica si un proyecto está listo para la transición y devuelve información de cobertura.
+    NO realiza la transición, solo verifica.
+
+    Validaciones:
+    - Solo el owner del proyecto puede consultar
+    - El proyecto debe estar en estado 'requesting_support'
+    - Al menos UNA etapa debe tener al menos UNA colaboración aprobada
+
+    Returns: Dict con información sobre la cobertura de etapas
+    """
+    # Fetch project with stages and collaborations
+    stmt = (
+        select(Project)
+        .options(
+            selectinload(Project.work_plan_stages).selectinload(WorkPlanStage.collaboration_requests)
+        )
+        .where(Project.id == project_id)
+    )
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Proyecto no encontrado",
+        )
+
+    # Verify user is owner
+    if project.initiator_user_id != current_user["username"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el owner del proyecto puede iniciar el proyecto",
+        )
+
+    # Verify project is in requesting_support status
+    if project.status != "requesting_support":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El proyecto debe estar en estado 'requesting_support'. Estado actual: {project.status}",
+        )
+
+    # Analyze stage coverage
+    stages_coverage = []
+    total_stages = len(project.work_plan_stages)
+    covered_stages = 0
+
+    for stage in project.work_plan_stages:
+        approved_collabs = [c for c in stage.collaboration_requests if c.is_approved]
+        has_approved = len(approved_collabs) > 0
+
+        if has_approved:
+            covered_stages += 1
+
+        stages_coverage.append({
+            "stage_id": stage.id,
+            "stage_name": stage.stage_name,
+            "has_approved_collaboration": has_approved,
+            "approved_count": len(approved_collabs),
+            "total_count": len(stage.collaboration_requests),
+        })
+
+    # Validate at least ONE stage has ONE approved collaboration
+    if covered_stages == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede iniciar el proyecto sin al menos una colaboración aprobada en alguna etapa",
+        )
+
+    # Return coverage info WITHOUT performing the transition
+    return {
+        "project_id": project.id,
+        "current_status": project.status,
+        "total_stages": total_stages,
+        "covered_stages": covered_stages,
+        "uncovered_stages": total_stages - covered_stages,
+        "stages_coverage": stages_coverage,
+    }
+
+
+async def start_project_transition(
+    project_id: int,
+    current_user: Dict,
+    session: AsyncSession,
+) -> Dict:
+    """
+    Transición de un proyecto de 'requesting_support' a 'in_progress'.
+
+    Validaciones:
+    - Solo el owner del proyecto puede hacer la transición
+    - El proyecto debe estar en estado 'requesting_support'
+    - Al menos UNA etapa debe tener al menos UNA colaboración aprobada
+
+    Returns: Dict con información sobre la transición y cobertura de etapas
+    """
+    # Fetch project with stages and collaborations
+    stmt = (
+        select(Project)
+        .options(
+            selectinload(Project.work_plan_stages).selectinload(WorkPlanStage.collaboration_requests)
+        )
+        .where(Project.id == project_id)
+    )
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Proyecto no encontrado",
+        )
+
+    # Verify user is owner
+    if project.initiator_user_id != current_user["username"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el owner del proyecto puede iniciar el proyecto",
+        )
+
+    # Verify project is in requesting_support status
+    if project.status != "requesting_support":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El proyecto debe estar en estado 'requesting_support'. Estado actual: {project.status}",
+        )
+
+    # Analyze stage coverage
+    stages_coverage = []
+    total_stages = len(project.work_plan_stages)
+    covered_stages = 0
+
+    for stage in project.work_plan_stages:
+        approved_collabs = [c for c in stage.collaboration_requests if c.is_approved]
+        has_approved = len(approved_collabs) > 0
+
+        if has_approved:
+            covered_stages += 1
+
+        stages_coverage.append({
+            "stage_id": stage.id,
+            "stage_name": stage.stage_name,
+            "has_approved_collaboration": has_approved,
+            "approved_count": len(approved_collabs),
+            "total_count": len(stage.collaboration_requests),
+        })
+
+    # Validate at least ONE stage has ONE approved collaboration
+    if covered_stages == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede iniciar el proyecto sin al menos una colaboración aprobada en alguna etapa",
+        )
+
+    # Perform transition
+    project.status = "in_progress"
+
+    try:
+        await session.commit()
+        await session.refresh(project)
+
+        return {
+            "project_id": project.id,
+            "previous_status": "requesting_support",
+            "new_status": "in_progress",
+            "total_stages": total_stages,
+            "covered_stages": covered_stages,
+            "uncovered_stages": total_stages - covered_stages,
+            "stages_coverage": stages_coverage,
+        }
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al realizar la transición: {str(exc)}"
+        )

@@ -5,9 +5,9 @@ from typing import List, Optional
 from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
 from app.core.database import get_db_session
-from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse
+from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse
 from app.services.bonita_client import instantiate_project, BonitaClient
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, start_project_transition, check_project_transition_readiness
 
 router = APIRouter()
 settings = get_settings()
@@ -279,4 +279,64 @@ async def complete_stage(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
+        )
+
+
+@router.get(
+    "/{project_id}/start/check",
+    response_model=ProjectTransitionReadinessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Verificar si proyecto está listo para iniciar",
+)
+async def check_project_start_readiness(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProjectTransitionReadinessResponse:
+    """
+    Verifica si un proyecto está listo para la transición a 'in_progress'.
+    NO realiza la transición, solo devuelve información de cobertura.
+
+    Solo el owner del proyecto puede consultar.
+    Requiere al menos una colaboración aprobada en alguna etapa.
+    """
+    try:
+        result = await check_project_transition_readiness(project_id, current_user, session)
+        return ProjectTransitionReadinessResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al verificar el estado del proyecto: {str(e)}",
+        )
+
+
+@router.put(
+    "/{project_id}/start",
+    response_model=ProjectStartTransitionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Iniciar proyecto (transición de requesting_support a in_progress)",
+)
+async def start_project(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProjectStartTransitionResponse:
+    """
+    Transiciona un proyecto de 'requesting_support' a 'in_progress'.
+
+    Solo el owner del proyecto puede realizar esta transición.
+    Requiere al menos una colaboración aprobada en alguna etapa.
+    Una vez en 'in_progress', NO se pueden crear nuevas colaboraciones.
+    """
+    try:
+        result = await start_project_transition(project_id, current_user, session)
+        return ProjectStartTransitionResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al iniciar el proyecto: {str(e)}",
         )

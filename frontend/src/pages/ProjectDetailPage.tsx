@@ -17,12 +17,13 @@ import {
 } from '@mui/material'
 import { ArrowBack } from '@mui/icons-material'
 import { format } from 'date-fns'
-import { fetchProjectById, resolveObservation, fetchCollaborationRequests, approveCollaboration, completeCollaboration, fetchCurrentUser } from '../api/bonita'
+import { fetchProjectById, resolveObservation, fetchCollaborationRequests, approveCollaboration, completeCollaboration, fetchCurrentUser, startProjectTransition, checkProjectTransitionReadiness } from '../api/bonita'
 import { ObservationModal } from '../components/ObservationModal'
 import { ObservationsListModal } from '../components/ObservationsListModal'
 import { CollaborationRequestsListModal } from '../components/CollaborationRequestsListModal'
 import { CreateCollaborationModal } from '../components/CreateCollaborationModal'
-import type { ProjectStatus, CollaborationRequestResponse, WorkPlanStageResponse } from '../types/project'
+import { StartProjectDialog } from '../components/StartProjectDialog'
+import type { ProjectStatus, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse } from '../types/project'
 
 const getStatusLabel = (status: ProjectStatus): string => {
     const labels: Record<ProjectStatus, string> = {
@@ -55,6 +56,8 @@ export const ProjectDetailPage = () => {
     const [createCollabModalOpen, setCreateCollabModalOpen] = useState(false)
     const [createCollabStageId, setCreateCollabStageId] = useState<number | null>(null)
     const [createCollabStageName, setCreateCollabStageName] = useState<string>('')
+    const [startProjectDialogOpen, setStartProjectDialogOpen] = useState(false)
+    const [transitionInfo, setTransitionInfo] = useState<ProjectTransitionReadinessResponse | null>(null)
 
     const { data: project, isLoading, error } = useQuery({
         queryKey: ['project', projectId],
@@ -107,6 +110,26 @@ export const ProjectDetailPage = () => {
         },
     })
 
+    const startProjectMutation = useMutation({
+        mutationFn: startProjectTransition,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['projects'] })
+            setStartProjectDialogOpen(false)
+            setTransitionInfo(null)
+            setSnackbar({
+                message: 'Proyecto iniciado exitosamente. Ya no se pueden crear nuevas colaboraciones.',
+                severity: 'success'
+            })
+        },
+        onError: (error: any) => {
+            const message = error.response?.data?.detail || 'Error al iniciar el proyecto'
+            setSnackbar({ message, severity: 'error' })
+            setStartProjectDialogOpen(false)
+            setTransitionInfo(null)
+        },
+    })
+
     const handleResolveObservation = (observationId: number) => {
         resolveMutation.mutate(observationId)
     }
@@ -143,6 +166,28 @@ export const ProjectDetailPage = () => {
         setCreateCollabModalOpen(false)
         setCreateCollabStageId(null)
         setCreateCollabStageName('')
+    }
+
+    const handleOpenStartProjectDialog = async () => {
+        try {
+            const info = await checkProjectTransitionReadiness(Number(projectId))
+            setTransitionInfo(info)
+            setStartProjectDialogOpen(true)
+        } catch (error: any) {
+            const message = error.response?.data?.detail || 'Error al verificar el estado del proyecto'
+            setSnackbar({ message, severity: 'error' })
+        }
+    }
+
+    const handleConfirmStartProject = () => {
+        if (projectId) {
+            startProjectMutation.mutate(Number(projectId))
+        }
+    }
+
+    const handleCancelStartProject = () => {
+        setStartProjectDialogOpen(false)
+        setTransitionInfo(null)
     }
 
     const isOwner = currentUser?.username === project?.initiatorUserId
@@ -188,15 +233,26 @@ export const ProjectDetailPage = () => {
             </Box>
 
             <Paper sx={{ p: 3 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
                     <Typography variant="h4" component="h1">
                         {project.projectName}
                     </Typography>
-                    <Chip
-                        label={getStatusLabel(project.status)}
-                        color={getStatusColor(project.status)}
-                        size="medium"
-                    />
+                    <Box display="flex" alignItems="center" gap={2}>
+                        <Chip
+                            label={getStatusLabel(project.status)}
+                            color={getStatusColor(project.status)}
+                            size="medium"
+                        />
+                        {isOwner && project.status === 'requesting_support' && (
+                            <Button
+                                variant="contained"
+                                color="success"
+                                onClick={handleOpenStartProjectDialog}
+                            >
+                                Iniciar Proyecto
+                            </Button>
+                        )}
+                    </Box>
                 </Box>
 
                 <Box display="flex" justifyContent="center" gap={2} mb={3}>
@@ -408,14 +464,20 @@ export const ProjectDetailPage = () => {
                                     </Grid>
                                     <Box mt={2} display="flex" justifyContent="flex-end" gap={1}>
                                         <Tooltip
-                                            title={isOwner ? "Los owners no pueden crear colaboraciones" : ""}
+                                            title={
+                                                isOwner
+                                                    ? "Los owners no pueden crear colaboraciones"
+                                                    : project.status !== 'requesting_support'
+                                                    ? "No se pueden crear colaboraciones en proyectos en progreso"
+                                                    : ""
+                                            }
                                             arrow
                                         >
                                             <span>
                                                 <Button
                                                     variant="contained"
                                                     size="small"
-                                                    disabled={isOwner}
+                                                    disabled={isOwner || project.status !== 'requesting_support'}
                                                     onClick={() => handleOpenCreateCollabModal(stage.id, stage.stageName)}
                                                 >
                                                     Crear Colaboración
@@ -486,6 +548,18 @@ export const ProjectDetailPage = () => {
                 onError={(message) => {
                     setSnackbar({ message, severity: 'error' })
                 }}
+            />
+
+            <StartProjectDialog
+                open={startProjectDialogOpen}
+                projectName={project.projectName}
+                stagesCoverage={transitionInfo?.stagesCoverage || null}
+                totalStages={transitionInfo?.totalStages || 0}
+                coveredStages={transitionInfo?.coveredStages || 0}
+                uncoveredStages={transitionInfo?.uncoveredStages || 0}
+                isLoading={startProjectMutation.isPending}
+                onConfirm={handleConfirmStartProject}
+                onCancel={handleCancelStartProject}
             />
 
             {snackbar && (

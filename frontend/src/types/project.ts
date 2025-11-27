@@ -103,3 +103,30 @@ export interface CollaborationCreatePayload {
   requestedAmount?: number
   amountCurrency?: string
 }
+
+export interface StageCoverageInfo {
+  stageId: number
+  stageName: string
+  hasApprovedCollaboration: boolean
+  approvedCount: number
+  totalCount: number
+}
+
+export interface ProjectTransitionReadinessResponse {
+  projectId: number
+  currentStatus: string
+  totalStages: number
+  coveredStages: number
+  uncoveredStages: number
+  stagesCoverage: StageCoverageInfo[]
+}
+
+export interface ProjectStartTransitionResponse {
+  projectId: number
+  previousStatus: string
+  newStatus: string
+  totalStages: number
+  coveredStages: number
+  uncoveredStages: number
+  stagesCoverage: StageCoverageInfo[]
+}
