@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { JSX } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import {
   AppBar,
   Toolbar,
@@ -10,16 +10,17 @@ import {
   Button,
   Snackbar,
   Alert,
+  Chip,
 } from '@mui/material'
 import type { AlertColor } from '@mui/material'
 import { Logout } from '@mui/icons-material'
 import { queryClient } from './lib/queryClient'
-import { logout } from './api/bonita'
+import { logout as apiLogout } from './api/bonita'
 import { LoginForm } from './components/LoginForm'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
-import MetricsDashboard from './pages/MetricsDashboard'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 type SnackbarState = {
   open: boolean
@@ -27,8 +28,46 @@ type SnackbarState = {
   severity: AlertColor
 }
 
-function App(): JSX.Element {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('projectplanning_token'))
+const AppBarWithRole = () => {
+  const { isAuthenticated, userRole, username, logout } = useAuth()
+
+  const handleLogout = () => {
+    apiLogout()
+    logout()
+    queryClient.clear()
+  }
+
+  return (
+    <AppBar position="static" elevation={0} color="primary">
+      <Toolbar>
+        <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          ProjectPlanning · Alta de Proyectos
+        </Typography>
+        {isAuthenticated && userRole && (
+          <Chip
+            label={userRole}
+            color="secondary"
+            size="small"
+            sx={{ mr: 2, fontWeight: 'bold' }}
+          />
+        )}
+        {isAuthenticated && username && (
+          <Typography variant="body2" sx={{ mr: 2, opacity: 0.9 }}>
+            {username}
+          </Typography>
+        )}
+        {isAuthenticated && (
+          <Button color="inherit" startIcon={<Logout />} onClick={handleLogout}>
+            Cerrar sesión
+          </Button>
+        )}
+      </Toolbar>
+    </AppBar>
+  )
+}
+
+function AppContent(): JSX.Element {
+  const { isAuthenticated } = useAuth()
   const [snackbar, setSnackbar] = useState<SnackbarState>({
     open: false,
     message: '',
@@ -36,22 +75,10 @@ function App(): JSX.Element {
   })
 
   const handleLoginSuccess = () => {
-    setIsAuthenticated(true)
     setSnackbar({
       open: true,
       message: 'Inicio de sesión exitoso',
       severity: 'success',
-    })
-  }
-
-  const handleLogout = () => {
-    logout()
-    queryClient.clear()
-    setIsAuthenticated(false)
-    setSnackbar({
-      open: true,
-      message: 'Sesión finalizada',
-      severity: 'info',
     })
   }
 
@@ -88,18 +115,7 @@ function App(): JSX.Element {
   return (
     <BrowserRouter>
       <Box minHeight="100vh" display="flex" flexDirection="column" bgcolor="background.default">
-        <AppBar position="static" elevation={0} color="primary">
-          <Toolbar>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>
-              ProjectPlanning · Alta de Proyectos
-            </Typography>
-            {isAuthenticated && (
-              <Button color="inherit" startIcon={<Logout />} onClick={handleLogout}>
-                Cerrar sesión
-              </Button>
-            )}
-          </Toolbar>
-        </AppBar>
+        <AppBarWithRole />
 
         <Box
           sx={{
@@ -116,14 +132,6 @@ function App(): JSX.Element {
               element={
                 <ProtectedRoute>
                   <ProjectListPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/metrics"
-              element={
-                <ProtectedRoute>
-                  <MetricsDashboard />
                 </ProtectedRoute>
               }
             />
@@ -159,7 +167,7 @@ function App(): JSX.Element {
 
         <Box component="footer" py={3} textAlign="center" bgcolor="background.paper">
           <Typography variant="body2" color="text.secondary">
-            Entrega 2 · Desarrollo de Software en Sistemas Distribuidos · 2025
+            Desarrollo de Software en Sistemas Distribuidos · 2025
           </Typography>
         </Box>
 
@@ -175,6 +183,14 @@ function App(): JSX.Element {
         </Snackbar>
       </Box>
     </BrowserRouter>
+  )
+}
+
+function App(): JSX.Element {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
 

@@ -12,6 +12,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { login } from '../api/bonita'
+import { useAuth } from '../contexts/AuthContext'
 
 const loginSchema = z.object({
   username: z.string(),
@@ -26,6 +27,7 @@ interface LoginFormProps {
 }
 
 export const LoginForm = ({ onSuccess, onError }: LoginFormProps) => {
+  const { login: authLogin } = useAuth()
   const {
     register,
     handleSubmit,
@@ -40,7 +42,8 @@ export const LoginForm = ({ onSuccess, onError }: LoginFormProps) => {
   const onSubmit = async (values: LoginFormValues) => {
     setIsSubmitting(true)
     try {
-      await login(values.username, values.password)
+      const { role, username } = await login(values.username, values.password)
+      authLogin(role, username)
       onSuccess()
     } catch (error) {
       console.error(error)
