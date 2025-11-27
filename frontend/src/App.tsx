@@ -18,6 +18,7 @@ import { logout } from './api/bonita'
 import { LoginForm } from './components/LoginForm'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
+import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import MetricsDashboard from './pages/MetricsDashboard'
 
 type SnackbarState = {
@@ -133,6 +134,14 @@ function App(): JSX.Element {
                   >
                     <ProjectCreatePage onShowMessage={handleShowMessage} />
                   </Container>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:projectId"
+              element={
+                <ProtectedRoute>
+                  <ProjectDetailPage />
                 </ProtectedRoute>
               }
             />

@@ -1,5 +1,13 @@
 import axios from 'axios'
-import type { ProjectFormValues, ProjectCreationResponse, ProjectListItem, ProjectStatus } from '../types/project'
+import type {
+  ProjectFormValues,
+  ProjectCreationResponse,
+  ProjectListItem,
+  ProjectStatus,
+  CollaborationCreatePayload,
+  CollaborationRequestResponse,
+  CurrentUserResponse,
+} from '../types/project'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1',
@@ -44,6 +52,57 @@ export const fetchProjects = async (
   const url = `/projects${queryString ? `?${queryString}` : ''}`
 
   const { data } = await api.get<ProjectListItem[]>(url)
+  return data
+}
+
+export const fetchProjectById = async (projectId: number): Promise<ProjectListItem> => {
+  const { data } = await api.get<ProjectListItem>(`/projects/${projectId}`)
+  return data
+}
+
+export const createObservation = async (observation: { projectId: number; title: string; description?: string }) => {
+  const { data } = await api.post('/projects/observations', observation)
+  return data
+}
+
+export const resolveObservation = async (observationId: number) => {
+  const { data } = await api.put(`/projects/observations/${observationId}/resolve`)
+  return data
+}
+
+export const fetchCollaborationRequests = async (projectId: number) => {
+  const { data } = await api.get(`/projects/${projectId}/collaborations`)
+  return data
+}
+
+export const approveCollaboration = async (collaborationId: number) => {
+  const { data } = await api.put(`/projects/collaborations/${collaborationId}/commit`)
+  return data
+}
+
+export const completeCollaboration = async (collaborationId: number) => {
+  const { data } = await api.put(`/projects/collaborations/${collaborationId}/complete`)
+  return data
+}
+
+export const fetchCurrentUser = async (): Promise<CurrentUserResponse> => {
+  const { data } = await api.get<CurrentUserResponse>('/auth/me')
+  return data
+}
+
+export const setUserOrganization = async (
+  organizationId: number
+): Promise<void> => {
+  await api.post('/auth/user/organization', { organizationId })
+}
+
+export const createCollaboration = async (
+  payload: CollaborationCreatePayload
+): Promise<CollaborationRequestResponse> => {
+  const { data } = await api.post<CollaborationRequestResponse>(
+    '/projects/collaborations',
+    payload
+  )
   return data
 }
 

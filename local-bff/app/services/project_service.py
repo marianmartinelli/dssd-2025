@@ -86,7 +86,10 @@ async def list_projects(
     Returns:
         List[Project]: List of projects matching the filters with their work plan stages.
     """
-    stmt = select(Project).options(selectinload(Project.work_plan_stages))
+    stmt = select(Project).options(
+        selectinload(Project.work_plan_stages),
+        selectinload(Project.observations)
+    )
 
     # Apply filters
     if organization_id is not None:
@@ -114,7 +117,10 @@ async def get_project_by_id(project_id: int, session: AsyncSession) -> Optional[
     Returns:
         Optional[Project]: The project with its work plan stages, or None if not found.
     """
-    stmt = select(Project).where(Project.id == project_id).options(selectinload(Project.work_plan_stages))
+    stmt = select(Project).where(Project.id == project_id).options(
+        selectinload(Project.work_plan_stages),
+        selectinload(Project.observations)
+    )
     result = await session.execute(stmt)
     project = result.scalar_one_or_none()
     return project
@@ -144,15 +150,19 @@ async def create_collaboration_request(
             detail="Stage does not belong to the specified project",
         )
 
-    # Get user ID from username
-    user_stmt = select(User).where(User.username == current_user["username"])
-    user_result = await session.execute(user_stmt)
-    user = user_result.scalar_one_or_none()
-    
-    if not user:
+    # Get project to verify ownership
+    project = await session.get(Project, project_id)
+    if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="Project not found"
+        )
+
+    # Verify that the current user is NOT the project owner
+    if project.initiator_user_id == current_user["username"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Los owners no pueden crear colaboraciones en sus propios proyectos"
         )
 
     # Create collaboration request
@@ -165,7 +175,7 @@ async def create_collaboration_request(
         requested_date=datetime.utcnow(),
         is_approved=False,
         is_completed=False,
-        committed_by=user.id,
+        committed_by=current_user["username"],
     )
 
     try:
@@ -183,7 +193,12 @@ async def list_collaboration_requests_by_project(
 ) -> List[CollaborationRequest]:
     """
     Devuelve todos los CollaborationRequest asociados a un proyecto.
+    Enriquece cada colaboración con el nombre de la organización del usuario que la creó.
     """
+    from app.models.user import User
+    from sqlalchemy.orm import selectinload
+
+    # Fetch collaboration requests
     stmt = (
         select(CollaborationRequest)
         .join(WorkPlanStage, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
@@ -191,7 +206,30 @@ async def list_collaboration_requests_by_project(
         .options(selectinload(CollaborationRequest.stage))
     )
     result = await session.execute(stmt)
-    return result.scalars().all()
+    collaborations = result.scalars().all()
+
+    # Batch load all users with organizations for efficiency
+    usernames = [c.committed_by for c in collaborations]
+    if usernames:
+        stmt = (
+            select(User)
+            .where(User.username.in_(usernames))
+            .options(selectinload(User.organization))
+        )
+        result = await session.execute(stmt)
+        users_map = {u.username: u for u in result.scalars().all()}
+    else:
+        users_map = {}
+
+    # Enrich collaborations with organization data
+    for collab in collaborations:
+        user = users_map.get(collab.committed_by)
+        if user and user.organization:
+            collab.committed_by_organization = user.organization.name
+        else:
+            collab.committed_by_organization = "Particular"
+
+    return collaborations
 
 
 async def commit_collaboration_request(

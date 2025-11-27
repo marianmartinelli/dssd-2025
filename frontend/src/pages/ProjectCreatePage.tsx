@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { AlertColor } from '@mui/material'
 import {
   Box,
@@ -15,7 +16,7 @@ import {
   FormControlLabel,
   Switch,
 } from '@mui/material'
-import { Add, DeleteOutline, Save, Casino } from '@mui/icons-material'
+import { Add, DeleteOutline, Save, Casino, ArrowBack } from '@mui/icons-material'
 import { useForm, useFieldArray, Controller, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { ProjectFormValues, ProjectCreationResponse, WorkPlanStageForm } from '../types/project'
@@ -54,10 +55,11 @@ interface ProjectCreatePageProps {
 }
 
 export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => {
+  const navigate = useNavigate()
   const [lastResult, setLastResult] = useState<ProjectCreationResponse | null>(null)
-  const [useRandomData, setUseRandomData] = useState(false)
+  const [useRandomData, setUseRandomData] = useState(true)
   const [formKey, setFormKey] = useState(0)
-  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(createDefaultValues())
+  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(() => generateRandomProjectData())
 
   const {
     control,
@@ -134,7 +136,16 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
         proceso en Bonita con el volumen de datos requerido.
       </Typography>
 
-      <Box mb={3}>
+      <Box mb={3} display="flex" gap={2} flexWrap="wrap" alignItems="center">
+        <Button
+          variant="outlined"
+          startIcon={<ArrowBack />}
+          onClick={() => navigate('/projects')}
+          sx={{ width: { xs: '100%', sm: 'auto' } }}
+        >
+          Volver a Proyectos
+        </Button>
+
         <Tooltip title="Rellena automáticamente el formulario con datos de prueba coherentes">
           <FormControlLabel
             control={
