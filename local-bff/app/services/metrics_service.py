@@ -1,10 +1,86 @@
-from sqlalchemy import select, func
+from typing import Dict, Any, List
 from datetime import date
-from typing import List, Dict, Any
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project, CollaborationRequest, WorkPlanStage
-from app.schemas.metrics import KpiData, OngRankingItem
+from app.models.project import Project, WorkPlanStage, CollaborationRequest
+from app.schemas.metrics import OngRankingItem
+
+
+async def metric_success_rate(project_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """
+    % de collaboration requests del proyecto que están marcadas como completadas.
+    """
+    # Total de collaboration requests para el proyecto
+    stmt_total = (
+        select(func.count(CollaborationRequest.id))
+        .join(WorkPlanStage, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
+        .where(WorkPlanStage.project_id == project_id)
+    )
+    total_res = await db.execute(stmt_total)
+    total = total_res.scalar() or 0
+
+    if total == 0:
+        return {"successRate": 0, "total": 0, "completed": 0}
+
+    # Completadas
+    stmt_completed = (
+        select(func.count(CollaborationRequest.id))
+        .join(WorkPlanStage, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
+        .where(WorkPlanStage.project_id == project_id)
+        .where(CollaborationRequest.is_completed == True)
+    )
+    comp_res = await db.execute(stmt_completed)
+    completed = comp_res.scalar() or 0
+
+    success_rate = int(round((completed / total) * 100))
+    return {"successRate": success_rate, "total": total, "completed": completed}
+
+
+async def metric_late_rate(project_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """
+    Tasa aproximada de retraso. Si no hay información de fecha de finalización en la BD,
+    se devuelve 100 - successRate como aproximación.
+    """
+    kpi = await metric_success_rate(project_id, db)
+    success = kpi.get("successRate", 0)
+    late_rate = max(0, 100 - success)
+    return {"lateRate": late_rate, "basedOnSuccessRate": success}
+
+
+async def metric_active_projects(project_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """
+    Determina si el proyecto está activo según start_date/end_date en la BD.
+    """
+    proj: Project | None = await db.get(Project, project_id)
+    if not proj:
+        raise ValueError("Project not found")
+
+    today = date.today()
+    db_active = bool(proj.start_date and proj.end_date and proj.start_date <= today <= proj.end_date)
+    return {"projectId": project_id, "isActive": db_active, "dbStart": proj.start_date, "dbEnd": proj.end_date}
+
+
+async def metric_avg_duration(project_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """
+    Duración promedio por etapa (en días) usando stage_start y stage_end de WorkPlanStage.
+    Solo se consideran etapas con ambas fechas.
+    """
+    stmt = select(WorkPlanStage.stage_start, WorkPlanStage.stage_end).where(WorkPlanStage.project_id == project_id)
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    durations: List[int] = []
+    for (start, end) in rows:
+        if start and end:
+            delta = (end - start).days
+            durations.append(max(0, delta))
+
+    if not durations:
+        return {"avgDurationDays": 0, "count": 0}
+
+    avg = int(round(sum(durations) / len(durations)))
+    return {"avgDurationDays": avg, "count": len(durations)}
 
 async def get_kpi_metrics(session: AsyncSession) -> Dict[str, Any]:
     """
@@ -16,7 +92,9 @@ async def get_kpi_metrics(session: AsyncSession) -> Dict[str, Any]:
     today = date.today()
 
     # Total de collaboration requests
-    total_stmt = select(func.count(CollaborationRequest.id))
+    total_stmt = select(func.count(CollaborationRequest.id)).where(
+        CollaborationRequest.is_approved == True
+    )
     total_res = await session.execute(total_stmt)
     total_requests = total_res.scalar() or 0
 

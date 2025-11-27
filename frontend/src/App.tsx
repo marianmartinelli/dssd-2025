@@ -120,6 +120,14 @@ function App(): JSX.Element {
               }
             />
             <Route
+              path="/metrics"
+              element={
+                <ProtectedRoute>
+                  <MetricsDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/projects/create"
               element={
                 <ProtectedRoute>

@@ -56,16 +56,45 @@ interface KpiCardProps {
 }
 
 // --- CONFIGURACIÓN DE DATOS SIMULADOS ---
-const fetchMetrics = async (role: string): Promise<{ data?: MetricsData, error?: string }> => {
+const fetchMetrics = async (): Promise<{ data?: MetricsData, error?: string }> => {
   const token = localStorage.getItem('projectplanning_token')
   try {
-    const res = await fetch('http://localhost:8000/api/v1/metrics/dashboard', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      return { error: `HTTP ${res.status}` }
+    // Obtener métricas agregadas (sin project_id)
+    const responses = await Promise.all([
+      fetch('http://localhost:8000/api/v1/metrics/global/success_rate', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch('http://localhost:8000/api/v1/metrics/global/late_rate', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch('http://localhost:8000/api/v1/metrics/global/active_projects', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch('http://localhost:8000/api/v1/metrics/global/ong_ranking', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ])
+
+    // Validar respuestas
+    for (const res of responses) {
+      if (!res.ok) {
+        return { error: `HTTP ${res.status}` }
+      }
     }
-    const data: MetricsData = await res.json()
+
+    const [successRes, lateRes, activeRes, rankingRes] = await Promise.all(
+      responses.map(r => r.json())
+    )
+
+    const data: MetricsData = {
+      kpiData: {
+        successRate: successRes.successRate ?? 0,
+        lateRate: lateRes.lateRate ?? 0,
+        activeProjects: activeRes.count ?? 0,
+      },
+      ongRankingData: rankingRes.ranking ?? [],
+    }
+    
     return { data }
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -114,9 +143,6 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, description, rate
 
 // --- COMPONENTE PRINCIPAL (BASADO EN MUI) ---
 const MetricsDashboard: React.FC = () => {
-  // Nota: El rol ahora se controla en App.tsx, pero mantenemos la simulación aquí
-  // para la validación inicial de acceso.
-  const [role, setRole] = useState<string>('Gerencia'); 
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +151,7 @@ const MetricsDashboard: React.FC = () => {
     const loadData = async () => {
       setLoading(true);
       setError(null);
-      const result = await fetchMetrics(role);
+      const result = await fetchMetrics();
       
       if (result.error) {
         setError(result.error);
@@ -137,32 +163,16 @@ const MetricsDashboard: React.FC = () => {
     };
 
     loadData();
-  }, [role]);
+  }, []);
 
-  // Esta función simula el cambio de rol para probar el acceso restringido
-  const toggleRole = () => {
-    setRole(role === 'Gerencia' ? 'ONG Originante' : 'Gerencia');
-  };
-  
-  // Vista de Acceso Denegado
+  // Vista de Error
   if (error) {
     return (
       <Container maxWidth="sm" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', p: 4 }}>
         <Paper elevation={6} sx={{ p: 5, textAlign: 'center', borderTop: 8, borderColor: 'error.main' }}>
           <LockIcon color="error" sx={{ fontSize: 60, mb: 2 }} />
-          <Typography variant="h5" gutterBottom>Acceso Restringido</Typography>
+          <Typography variant="h5" gutterBottom>Error al Cargar Métricas</Typography>
           <Typography color="text.secondary" mb={3}>{error}</Typography>
-          <Button
-            variant="contained"
-            color="primary"
-            fullWidth
-            onClick={toggleRole}
-          >
-            Simular Inicio de Sesión como Gerencia
-          </Button>
-          <Typography variant="caption" display="block" mt={2} color="text.secondary">
-            Rol actual: <Typography component="span" fontWeight="bold" color="error.main">{role}</Typography>
-          </Typography>
         </Paper>
       </Container>
     );
@@ -185,101 +195,100 @@ const MetricsDashboard: React.FC = () => {
   // Vista del Tablero
   return (
     <Box sx={{ flexGrow: 1, py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600, mb: 4, display: 'flex', alignItems: 'center' }}>
-        <BarChart3Icon color="primary" sx={{ mr: 1, fontSize: 32 }} />
-        Tablero de Control Gerencial
-      </Typography>
+      <Container maxWidth="lg">
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600, mb: 4, display: 'flex', alignItems: 'center' }}>
+          <BarChart3Icon color="primary" sx={{ mr: 1, fontSize: 32 }} />
+          Tablero de Control Gerencial
+        </Typography>
 
-      {/* TARJETAS DE INDICADORES (KPIs) */}
-      <Grid container spacing={4} mb={4}>
-        
-        {/* Indicador 3: Éxito en Ejecución y Plazo */}
-        <Grid item xs={12} sm={6} md={3}>
-          <KpiCard
-            title="% Proyectos Éxito/Plazo"
-            value={`${data.kpiData.successRate}%`}
-            rate={data.kpiData.successRate}
-            icon={<CheckCircleIcon />}
-            description="Casos que finalizan exitosamente y en término."
-          />
+        {/* TARJETAS DE INDICADORES (KPIs) */}
+        <Grid container spacing={4} mb={4}>
+          
+          {/* Indicador 3: Éxito en Ejecución y Plazo */}
+          <Grid item xs={12} sm={6} md={3}>
+            <KpiCard
+              title="% Proyectos Éxito/Plazo"
+              value={`${data.kpiData.successRate}%`}
+              rate={data.kpiData.successRate}
+              icon={<CheckCircleIcon />}
+              description="Casos que finalizan exitosamente y en término."
+            />
+          </Grid>
+
+          {/* Indicador 4: Desvío del Plazo */}
+          <Grid item xs={12} sm={6} md={3}>
+            <KpiCard
+              title="% Proyectos Fuera de Plazo"
+              value={`${data.kpiData.lateRate}%`}
+              rate={data.kpiData.lateRate}
+              icon={<AlertTriangleIcon />}
+              description="Casos que terminan fuera del cronograma original."
+            />
+          </Grid>
+
+          {/* Métrica de ejemplo: Proyectos Activos */}
+          <Grid item xs={12} sm={6} md={3}>
+            <KpiCard
+              title="Proyectos Activos"
+              value={data.kpiData.activeProjects}
+              rate={0}
+              icon={<ListIcon />}
+              description="Procesos de Proyecto en estado 'En Ejecución'."
+            />
+          </Grid>
+
+          {/* Métrica de ejemplo: Tasa de Compromiso */}
+          <Grid item xs={12} sm={6} md={3}>
+            <KpiCard
+              title="Compromiso Cumplido"
+              value="92%"
+              rate={92}
+              icon={<TrendingUpIcon />}
+              description="Compromisos marcados como 'Commit & Complete'."
+            />
+          </Grid>
         </Grid>
 
-        {/* Indicador 4: Desvío del Plazo */}
-        <Grid item xs={12} sm={6} md={3}>
-          <KpiCard
-            title="% Proyectos Fuera de Plazo"
-            value={`${data.kpiData.lateRate}%`}
-            rate={data.kpiData.lateRate}
-            icon={<AlertTriangleIcon />}
-            description="Casos que terminan fuera del cronograma original."
-          />
-        </Grid>
-
-        {/* Métrica de ejemplo: Proyectos Activos */}
-        <Grid item xs={12} sm={6} md={3}>
-          <KpiCard
-            title="Proyectos Activos"
-            value={data.kpiData.activeProjects}
-            rate={0} // No aplica la tasa de color
-            icon={<ListIcon />}
-            description="Procesos de Proyecto en estado 'En Ejecución'."
-          />
-        </Grid>
-
-        {/* Métrica de ejemplo: Tasa de Compromiso */}
-        <Grid item xs={12} sm={6} md={3}>
-          <KpiCard
-            title="Compromiso Cumplido"
-            value="92%"
-            rate={92} // Métrica de ejemplo
-            icon={<TrendingUpIcon />}
-            description="Compromisos marcados como 'Commit & Complete'."
-          />
-        </Grid>
-      </Grid>
-
-      {/* GRÁFICO PRINCIPAL: Indicador 1 y Filtros */}
-      <Grid container spacing={4}>
-        
-        {/* Columna 1 & 2: Gráfico de Barras */}
-        <Grid item xs={12} lg={8}>
-          <Paper elevation={4} sx={{ p: 3, height: 450 }}>
-            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <UsersIcon color="primary" sx={{ mr: 1 }} />
-              Indicador 1: Top ONGs Colaboradoras
-            </Typography>
-            <Typography variant="body2" color="text.secondary" mb={2}>
-                ONGs con la mayor cantidad de actividades de colaboración ejecutadas (compromisos cumplidos).
-            </Typography>
-            <Box sx={{ height: 320 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={data.ongRankingData}
-                  layout="vertical"
-                  margin={{ top: 10, right: 30, left: 100, bottom: 10 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="ong_name" width={100} />
-                  <Tooltip 
+        {/* GRÁFICO PRINCIPAL: Indicador 1 */}
+        <Grid container spacing={4}>
+          <Grid item xs={12} lg={8}>
+            <Paper elevation={4} sx={{ p: 3, height: 450 }}>
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <UsersIcon color="primary" sx={{ mr: 1 }} />
+                Indicador 1: Top ONGs Colaboradoras
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                ONGs con la mayor cantidad de actividades de colaboración ejecutadas.
+              </Typography>
+              <Box sx={{ height: 320 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={data.ongRankingData}
+                    layout="vertical"
+                    margin={{ top: 10, right: 30, left: 100, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis type="category" dataKey="ong_name" width={100} />
+                    <Tooltip 
                       cursor={{ fill: 'rgba(63, 81, 181, 0.1)' }} 
                       formatter={(value: any) => [`${value} Colaboraciones`, 'Total Ejecutadas']} 
-                  />
-                  <Bar dataKey="colaboraciones" fill="#3f51b5" radius={[4, 4, 0, 0]} name="Colaboraciones Ejecutadas" />
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          </Paper>
+                    />
+                    <Bar dataKey="colaboraciones" fill="#3f51b5" radius={[4, 4, 0, 0]} name="Colaboraciones Ejecutadas" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            </Paper>
+          </Grid>
         </Grid>
-        
-      </Grid>
 
-      {/* Pie de página con aclaración de fuentes */}
-      <Box component="footer" py={3} textAlign="center" mt={4}>
-        <Typography variant="body2" color="text.secondary">
-          Datos extraídos de la Base de Datos (PostgreSQL) y sincronizados con la API de Bonita BPM para la trazabilidad de los casos.
-        </Typography>
-      </Box>
+        {/* Pie de página */}
+        <Box component="footer" py={3} textAlign="center" mt={4}>
+          <Typography variant="body2" color="text.secondary">
+            Datos sincronizados con la Base de Datos (PostgreSQL) y Bonita BPM.
+          </Typography>
+        </Box>
+      </Container>
     </Box>
   );
 };
