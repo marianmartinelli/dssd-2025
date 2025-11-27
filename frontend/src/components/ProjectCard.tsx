@@ -36,30 +36,52 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardContent>
         <Stack spacing={2}>
-          <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-            <Typography variant="h6" component="h3" gutterBottom>
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
+            <Typography
+              variant="h6"
+              component="h3"
+              gutterBottom
+              sx={{
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                hyphens: 'auto',
+                flex: 1,
+              }}
+            >
               {project.projectName}
             </Typography>
             <Chip
               label={getStatusLabel(project.status)}
               color={getStatusColor(project.status)}
               size="small"
+              sx={{ flexShrink: 0 }}
             />
           </Box>
 
           {project.projectDescription && (
-            <Typography variant="body2" color="text.secondary" noWrap>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                wordBreak: 'break-word',
+              }}
+            >
               {project.projectDescription}
             </Typography>
           )}
 
-          <Stack direction="row" spacing={2} flexWrap="wrap">
+          <Stack direction="row" spacing={2} flexWrap="wrap" sx={{ gap: 1 }}>
             {project.startDate && project.endDate && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" display="block">
                   Fechas:
                 </Typography>
-                <Typography variant="body2">
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>
                   {format(new Date(project.startDate), 'dd/MM/yyyy')} -{' '}
                   {format(new Date(project.endDate), 'dd/MM/yyyy')}
                 </Typography>
@@ -67,11 +89,11 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
             )}
 
             {project.estimatedBudget !== undefined && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" display="block">
                   Presupuesto:
                 </Typography>
-                <Typography variant="body2">
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>
                   {project.currency} {project.estimatedBudget.toLocaleString()}
                 </Typography>
               </Box>

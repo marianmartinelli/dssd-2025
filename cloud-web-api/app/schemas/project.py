@@ -90,7 +90,7 @@ class ProjectResponse(CamelCaseModel):
     organization_id: Optional[int] = None
     status: str = "in_progress"
     work_plan_stages: List[WorkPlanStageResponse] = []
-    observations: List[ObservationResponse] = []
+    observations: List['ObservationResponse'] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -115,8 +115,10 @@ class CollaborationRequestResponse(CamelCaseModel):
     is_approved: Optional[bool] = False
     is_completed: Optional[bool] = False
     committed_by: str
+    committed_by_organization: Optional[str] = "Particular"
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ObservationCreate(CamelCaseModel):
     project_id: int

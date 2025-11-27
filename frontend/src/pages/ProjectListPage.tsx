@@ -60,7 +60,12 @@ export const ProjectListPage = () => {
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Stack spacing={3}>
         {/* Header */}
-        <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          spacing={2}
+        >
           <Typography variant="h4" component="h1">
             Proyectos
           </Typography>
@@ -68,10 +73,11 @@ export const ProjectListPage = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={handleCreateProject}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
           >
             Nuevo Proyecto
           </Button>
-        </Box>
+        </Stack>
 
         {/* Tabs */}
         <Paper>
@@ -101,13 +107,11 @@ export const ProjectListPage = () => {
               : 'No hay proyectos disponibles.'}
           </Alert>
         ) : (
-          <Grid container spacing={3}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 3 }}>
             {projects?.map((project) => (
-              <Grid item xs={12} sm={6} md={4} key={project.id}>
-                <ProjectCard project={project} />
-              </Grid>
+              <ProjectCard key={project.id} project={project} />
             ))}
-          </Grid>
+          </Box>
         )}
       </Stack>
     </Container>
