@@ -26,6 +26,7 @@
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.63.0",
     "react-router-dom": "^7.9.6",
+    "recharts": "^2.10.3",
     "zod": "^4.1.11"
   },
   "devDependencies": {

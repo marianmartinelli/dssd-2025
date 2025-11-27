@@ -18,6 +18,7 @@ import { logout } from './api/bonita'
 import { LoginForm } from './components/LoginForm'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
+import MetricsDashboard from './pages/MetricsDashboard'
 
 type SnackbarState = {
   open: boolean
