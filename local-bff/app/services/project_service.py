@@ -40,6 +40,7 @@ async def save_project(
         Project: The saved project with its work plan stages.
     """
     project = Project(
+        external_ref=payload.external_ref if hasattr(payload, 'external_ref') and payload.external_ref else None,
         project_name=payload.project_name,
         project_description=payload.project_description,
         project_category=payload.project_category,
@@ -64,6 +65,7 @@ async def save_project(
     # Save work plan stages
     for stage in payload.work_plan_stages:
         work_plan_stage = WorkPlanStage(
+            external_ref=stage.external_ref if hasattr(stage, 'external_ref') and stage.external_ref else None,
             project_id=project.id,
             stage_name=stage.stage_name,
             stage_start=stage.stage_start,
@@ -966,6 +968,7 @@ async def save_observation(
     
     # Create observation
     observation = Observation(
+        external_ref=payload.external_ref if hasattr(payload, 'external_ref') and payload.external_ref else None,
         project_id=project_id,
         title=payload.title,
         description=payload.description,

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
+import uuid
+from structlog import get_logger
 
 from app.api.deps import get_current_user, get_bonita_client
 from app.core.config import get_settings
@@ -8,6 +10,8 @@ from app.core.database import get_db_session
 from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse, ObservationCreate, ObservationResponse
 from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
 from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, complete_project, start_project_transition, check_project_transition_readiness, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
+
+logger = get_logger()
 
 router = APIRouter()
 settings = get_settings()
@@ -36,6 +40,31 @@ async def create_project(
     try:
         case_id: Optional[int] = None
 
+        # Generate external_refs for project and stages BEFORE sending to Bonita
+        # This ensures Bonita receives the UUIDs
+        if not hasattr(payload, 'external_ref') or not payload.external_ref:
+            # Create a copy with external_ref set
+            new_external_ref = str(uuid.uuid4())
+            payload = payload.model_copy(update={'external_ref': new_external_ref})
+            logger.info("Generated external_ref for project", external_ref=new_external_ref)
+
+        # Update stages with external_ref
+        updated_stages = []
+        for idx, stage in enumerate(payload.work_plan_stages):
+            if not hasattr(stage, 'external_ref') or not stage.external_ref:
+                new_stage_ref = str(uuid.uuid4())
+                stage = stage.model_copy(update={'external_ref': new_stage_ref})
+                logger.info("Generated external_ref for stage", stage_idx=idx, external_ref=new_stage_ref)
+            updated_stages.append(stage)
+
+        # Update payload with modified stages
+        if updated_stages:
+            payload = payload.model_copy(update={'work_plan_stages': updated_stages})
+
+        logger.info("Payload prepared for Bonita",
+                   project_external_ref=payload.external_ref,
+                   stages_count=len(payload.work_plan_stages))
+
         if settings.use_bonita:
             # Obtener cliente de Bonita y crear caso
             bonita_client = await get_bonita_client(current_user)
@@ -51,6 +80,7 @@ async def create_project(
             case_id = int(response["caseId"])
 
         # Guardar proyecto en la base de datos (con o sin case_id)
+        # El payload ya tiene los external_refs generados
         project = await save_project(payload, current_user, db_session, case_id=case_id)
 
         return ProjectResponse.model_validate(project)
@@ -392,6 +422,10 @@ async def create_observation(
     try:
         case_id: Optional[int] = None
         task_id: Optional[str] = None
+
+        # Generate external_ref for observation BEFORE sending to Bonita
+        if not hasattr(payload, 'external_ref') or not payload.external_ref:
+            payload = payload.model_copy(update={'external_ref': str(uuid.uuid4())})
 
         if settings.use_bonita:
             # Obtener cliente de Bonita y crear caso

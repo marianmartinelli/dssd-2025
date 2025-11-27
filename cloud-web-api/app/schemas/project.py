@@ -28,6 +28,7 @@ class WorkPlanStage(CamelCaseModel):
     description: constr(strip_whitespace=True, min_length=5, max_length=500)
     estimated_amount: Optional[float] = Field(None, ge=0)
     amount_currency: Optional[str] = Field(None, min_length=3, max_length=3)
+    external_ref: Optional[str] = None
 
 
 class ProjectBase(CamelCaseModel):
@@ -57,6 +58,7 @@ class BonitaInstantiationResult(CamelCaseModel):
 
 class WorkPlanStageResponse(CamelCaseModel):
     id: int
+    external_ref: Optional[str] = None
     project_id: int
     stage_name: str
     stage_start: Optional[date] = None
@@ -72,6 +74,7 @@ class WorkPlanStageResponse(CamelCaseModel):
 
 class ProjectResponse(CamelCaseModel):
     id: int
+    external_ref: Optional[str] = None
     project_name: str
     project_description: Optional[str] = None
     project_category: Optional[str] = None
@@ -102,10 +105,12 @@ class CollaborationRequestCreate(CamelCaseModel):
     description: Optional[constr(strip_whitespace=True, min_length=5, max_length=1000)] = None
     requested_amount: Optional[float] = Field(None, ge=0)
     amount_currency: Optional[str] = Field(None, min_length=3, max_length=3)
+    external_ref: Optional[str] = None
 
 
 class CollaborationRequestResponse(CamelCaseModel):
     id: int
+    external_ref: Optional[str] = None
     stage_id: int = Field(alias="work_plan_stage_id")
     title: str
     description: Optional[str] = None
@@ -124,10 +129,12 @@ class ObservationCreate(CamelCaseModel):
     project_id: int
     title: constr(strip_whitespace=True, min_length=3, max_length=150)
     description: Optional[constr(strip_whitespace=True, min_length=5, max_length=1000)] = None
+    external_ref: Optional[str] = None
 
 
 class ObservationResponse(CamelCaseModel):
     id: int
+    external_ref: Optional[str] = None
     project_id: int
     title: str
     description: Optional[str] = None

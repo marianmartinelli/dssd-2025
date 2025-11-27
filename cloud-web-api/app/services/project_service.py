@@ -30,6 +30,7 @@ async def save_project(
         Project: The saved project with its work plan stages.
     """
     project = Project(
+        external_ref=payload.external_ref if hasattr(payload, 'external_ref') else None,
         project_name=payload.project_name,
         project_description=payload.project_description,
         project_category=payload.project_category,
@@ -54,6 +55,7 @@ async def save_project(
     # Save work plan stages
     for stage in payload.work_plan_stages:
         work_plan_stage = WorkPlanStage(
+            external_ref=stage.external_ref if hasattr(stage, 'external_ref') else None,
             project_id=project.id,
             stage_name=stage.stage_name,
             stage_start=stage.stage_start,
@@ -121,6 +123,23 @@ async def get_project_by_id(project_id: int, session: AsyncSession) -> Optional[
     project = result.scalar_one_or_none()
     return project
 
+
+async def get_project_by_external_ref(external_ref: str, session: AsyncSession) -> Optional[Project]:
+    """
+    Get a specific project by external_ref with its associated work plan stages and observations.
+
+    Args:
+        external_ref (str): The external_ref of the project to retrieve.
+        session (AsyncSession): The database session.
+
+    Returns:
+        Optional[Project]: The project with its work plan stages and observations, or None if not found.
+    """
+    stmt = select(Project).where(Project.external_ref == external_ref).options(selectinload(Project.work_plan_stages), selectinload(Project.observations))
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+    return project
+
 async def create_collaboration_request(
     project_id: int,
     stage_id: int,
@@ -156,6 +175,7 @@ async def create_collaboration_request(
 
     # Create collaboration request
     collab = CollaborationRequest(
+        external_ref=payload.external_ref if hasattr(payload, 'external_ref') else None,
         work_plan_stage_id=stage_id,
         title=payload.title,
         description=payload.description,
@@ -445,6 +465,7 @@ async def save_observation(
     
     # Create observation
     observation = Observation(
+        external_ref=payload.external_ref if hasattr(payload, 'external_ref') else None,
         project_id=project_id,
         title=payload.title,
         description=payload.description,
@@ -500,15 +521,15 @@ async def resolve_observation(
     """
     Marca una observación como resuelta.
     Si la observación tiene un task_id de Bonita, completa la tarea en Bonita.
-    
+
     Args:
         observation_id (int): ID de la observación
         session (AsyncSession): Sesión de BD
         bonita_client: Cliente de Bonita (opcional, solo si USE_BONITA=true)
-        
+
     Returns:
         Observation: La observación actualizada
-        
+
     Raises:
         HTTPException: Si la observación no existe
     """
@@ -516,13 +537,13 @@ async def resolve_observation(
     stmt = select(Observation).where(Observation.id == observation_id)
     result = await session.execute(stmt)
     observation = result.scalar_one_or_none()
-    
+
     if not observation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Observación no encontrada",
         )
-    
+
     # Si tiene task_id y bonita_client, completar la tarea en Bonita
     if observation.task_id and bonita_client:
         try:
@@ -534,10 +555,44 @@ async def resolve_observation(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to complete task in Bonita: {str(e)}"
             )
-    
+
     # Marcar como resuelta en BD
     observation.is_resolved = True
     await session.commit()
     await session.refresh(observation)
-    
+
     return observation
+
+
+async def get_observation_by_external_ref(external_ref: str, session: AsyncSession) -> Optional[Observation]:
+    """
+    Get a specific observation by external_ref.
+
+    Args:
+        external_ref (str): The external_ref of the observation to retrieve.
+        session (AsyncSession): The database session.
+
+    Returns:
+        Optional[Observation]: The observation, or None if not found.
+    """
+    stmt = select(Observation).where(Observation.external_ref == external_ref)
+    result = await session.execute(stmt)
+    observation = result.scalar_one_or_none()
+    return observation
+
+
+async def get_collaboration_by_external_ref(external_ref: str, session: AsyncSession) -> Optional[CollaborationRequest]:
+    """
+    Get a specific collaboration request by external_ref with its associated stage.
+
+    Args:
+        external_ref (str): The external_ref of the collaboration request to retrieve.
+        session (AsyncSession): The database session.
+
+    Returns:
+        Optional[CollaborationRequest]: The collaboration request with its stage, or None if not found.
+    """
+    stmt = select(CollaborationRequest).where(CollaborationRequest.external_ref == external_ref).options(selectinload(CollaborationRequest.stage))
+    result = await session.execute(stmt)
+    collaboration = result.scalar_one_or_none()
+    return collaboration

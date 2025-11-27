@@ -1,12 +1,14 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean 
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+import uuid
 
 class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
+    external_ref = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     project_name = Column(String, nullable=False)
     project_description = Column(String, nullable=True)
     project_category = Column(String, nullable=True)
@@ -34,6 +36,7 @@ class WorkPlanStage(Base):
     __tablename__ = "work_plan_stages"
 
     id = Column(Integer, primary_key=True, index=True)
+    external_ref = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(Integer, ForeignKey("projects.id"))
     stage_name = Column(String, nullable=False)
     stage_start = Column(Date, nullable=True)
@@ -52,6 +55,7 @@ class CollaborationRequest(Base):
     __tablename__ = "collaboration_requests"
 
     id = Column(Integer, primary_key=True, index=True)
+    external_ref = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     work_plan_stage_id = Column(Integer, ForeignKey("work_plan_stages.id"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
@@ -69,6 +73,7 @@ class Observation(Base):
     __tablename__ = "observations"
 
     id = Column(Integer, primary_key=True, index=True)
+    external_ref = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)

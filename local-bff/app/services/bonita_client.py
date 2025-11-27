@@ -211,8 +211,9 @@ class BonitaClient:
         return response_data
 
     def _build_contract_payload(self, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
-        return {
+        payload = {
             "proyectoContrato": {
+                "externalRef": project.external_ref,
                 "projectName": project.project_name,
                 "projectDescription": project.project_description,
                 "projectCategory": project.project_category,
@@ -230,9 +231,14 @@ class BonitaClient:
                 "initiatorUserId": initiator_username,
             }
         }
+        logger.info("Bonita contract payload", external_ref=project.external_ref,
+                   stages_count=len(project.work_plan_stages),
+                   first_stage_external_ref=project.work_plan_stages[0].external_ref if project.work_plan_stages else None)
+        return payload
 
     def _map_stage(self, stage: WorkPlanStage) -> Dict[str, Any]:
         return {
+            "externalRef": stage.external_ref,
             "stageName": stage.stage_name,
             "stageStart": stage.stage_start.isoformat(),
             "stageEnd": stage.stage_end.isoformat(),
@@ -245,8 +251,9 @@ class BonitaClient:
     def _build_observation_contract_payload(self, observation: "ObservationCreate", initiator_username: str) -> Dict[str, Any]:
         """Construye el payload del contrato para una observación."""
         from datetime import datetime
-        return {
+        payload = {
             "observacionContrato": {
+                "externalRef": observation.external_ref,
                 "project_id": observation.project_id,
                 "title": observation.title,
                 "description": observation.description or "",
@@ -255,6 +262,8 @@ class BonitaClient:
                 "is_resolved": False,
             }
         }
+        logger.info("Bonita observation contract payload", external_ref=observation.external_ref)
+        return payload
 
     async def _get_task_by_case_id(self, case_id: str, max_retries: int = 10, retry_delay: float = 0.5) -> str:
         """Obtiene el taskId a partir del caseId con reintentos"""
@@ -495,6 +504,7 @@ class BonitaClient:
                     org_name = getattr(collab, "committed_by_organization", "Particular")
 
                 collaborations_data.append({
+                    "externalRef": collab.external_ref if hasattr(collab, 'external_ref') else None,
                     "collaborationId": collab.id,
                     "title": collab.title,
                     "description": collab.description or "",
@@ -508,6 +518,7 @@ class BonitaClient:
                 })
 
             stages_data.append({
+                "externalRef": stage.external_ref if hasattr(stage, 'external_ref') else None,
                 "stageId": stage.id,
                 "stageName": stage.stage_name,
                 "stageStart": stage.stage_start.isoformat() if stage.stage_start else "",
@@ -522,6 +533,7 @@ class BonitaClient:
 
         return {
             "projectUpdate": {
+                "externalRef": project.external_ref if hasattr(project, 'external_ref') else None,
                 "projectId": project.id,
                 "caseId": project.case_id,
                 "title": project.project_name,

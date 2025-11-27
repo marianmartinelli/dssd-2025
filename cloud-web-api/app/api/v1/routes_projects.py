@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ObservationCreate, ObservationResponse
 from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, get_project_by_external_ref, get_observation_by_external_ref, get_collaboration_by_external_ref, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
 
 router = APIRouter()
 settings = get_settings()
@@ -112,6 +112,40 @@ async def get_projects(
 
 
 @router.get(
+    "/by-external-ref/{external_ref}",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Obtener proyecto por external_ref",
+)
+async def get_project_by_external_reference(
+    external_ref: str,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProjectResponse:
+    """
+    Obtiene un proyecto específico por su external_ref con todas sus etapas del plan de trabajo y observaciones.
+
+    Requiere autenticación JWT.
+    """
+    try:
+        project = await get_project_by_external_ref(external_ref, session)
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Proyecto no encontrado",
+            )
+        return ProjectResponse.model_validate(project)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener proyecto: {str(e)}",
+        )
+
+
+@router.get(
     "/{project_id}",
     response_model=ProjectResponse,
     status_code=status.HTTP_200_OK,
@@ -142,6 +176,40 @@ async def get_project(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener proyecto: {str(e)}",
+        )
+
+
+@router.get(
+    "/collaborations/by-external-ref/{external_ref}",
+    response_model=CollaborationRequestResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Obtener pedido de colaboración por external_ref",
+)
+async def get_collaboration_by_external_reference(
+    external_ref: str,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> CollaborationRequestResponse:
+    """
+    Obtiene un pedido de colaboración específico por su external_ref con su etapa asociada.
+
+    Requiere autenticación JWT.
+    """
+    try:
+        collaboration = await get_collaboration_by_external_ref(external_ref, session)
+        if not collaboration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pedido de colaboración no encontrado",
+            )
+        return CollaborationRequestResponse.model_validate(collaboration)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener pedido de colaboración: {str(e)}",
         )
 
 
@@ -280,6 +348,40 @@ async def complete_stage(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
         )
+
+@router.get(
+    "/observations/by-external-ref/{external_ref}",
+    response_model=ObservationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Obtener observación por external_ref",
+)
+async def get_observation_by_external_reference(
+    external_ref: str,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ObservationResponse:
+    """
+    Obtiene una observación específica por su external_ref.
+
+    Requiere autenticación JWT.
+    """
+    try:
+        observation = await get_observation_by_external_ref(external_ref, session)
+        if not observation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Observación no encontrada",
+            )
+        return ObservationResponse.model_validate(observation)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener observación: {str(e)}",
+        )
+
 
 @router.post(
     "/observations",
