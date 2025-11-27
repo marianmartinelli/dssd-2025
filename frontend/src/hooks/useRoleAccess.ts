@@ -9,8 +9,8 @@ export const useRoleAccess = () => {
   return {
     userRole,
     isONG: userRole === 'ONG',
-    isAdmin: userRole === 'Admin' || userRole === 'Administrator',
-    isReviewer: userRole === 'Reviewer' || userRole === 'Evaluador',
+    isConsejo: userRole === 'Consejo Directivo',
+    isGerente: userRole === 'Gerente',
     hasRole: (role: string) => userRole === role,
     hasAnyRole: (...roles: string[]) => roles.includes(userRole || ''),
   }
