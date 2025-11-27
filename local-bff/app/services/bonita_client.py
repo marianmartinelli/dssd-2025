@@ -246,6 +246,7 @@ class BonitaClient:
             "description": stage.description,
             "estimatedAmount": stage.estimated_amount,
             "amountCurrency": stage.amount_currency,
+            "isCompleted": stage.is_completed if hasattr(stage, 'is_completed') else False,
         }
 
     def _build_observation_contract_payload(self, observation: "ObservationCreate", initiator_username: str) -> Dict[str, Any]:
