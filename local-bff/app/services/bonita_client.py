@@ -768,90 +768,36 @@ async def advance_project_in_bonita(
             detail=f"Error advancing project in Bonita: {str(e)}"
         )
 
-async def get_completed_cases(self) -> List[Dict[str, Any]]:
+async def get_active_cases(self) -> List[Dict[str, Any]]:
     """
-    Obtiene todos los cases completados de Bonita.
-    Retorna una lista de dicts con caseId y endDate.
-    
-    Query Bonita: GET /bonita/API/bpm/case?f=state=completed&c=1000
+    Obtiene todos los cases ACTIVOS de Bonita.
+    Consulta /bonita/API/bpm/case con filtro state=active.
+    Retorna una lista de dicts con caseId y otros atributos.
     """
     try:
-        # Parámetros comunes para ambas queries
         params = {
-            #"f": "state=archived",  # filtro: solo cases completados
+            "f": "state=active",  # filtro: solo cases activos
             "c": 1000,  # limit: máximo 1000 resultados
             "p": 0,  # page: comenzar desde página 0
         }
 
-        params_arch = {
-            "p": 0,  # page: comenzar desde página 0
-        }
-
-        # 1. Obtener casos completados activos
-        response_active = await self.session.client.get(
+        response = await self.session.client.get(
             "/bonita/API/bpm/case",
             params=params,
             headers=self.session.auth_headers,
         )
-        response_active.raise_for_status()
-        active_cases = response_active.json() if isinstance(response_active.json(), list) else []
+        response.raise_for_status()
 
-        logger.info("Active completed cases retrieved from Bonita", count=len(active_cases))
+        active_cases = response.json() if isinstance(response.json(), list) else []
 
-        # 2. Obtener casos completados archivados
-        #response_archived = await self.session.client.get(
-        #    "/bonita/API/bpm/archivedcase",
-        #    params=params_arch,
-        #    headers=self.session.auth_headers,
-        #)
-        #response_archived.raise_for_status()
-        #archived_cases = response_archived.json() if isinstance(response_archived.json(), list) else []
+        logger.info("Active cases retrieved from Bonita", count=len(active_cases))
 
-        #logger.info("Archived completed cases retrieved from Bonita", count=len(archived_cases))
-
-        # 3. Procesar ambos listados
-        #all_cases = active_cases + archived_cases
-
-        cases_data = active_cases
-        completed_cases: List[Dict[str, Any]] = []
-
-        if isinstance(cases_data, list):
-            for case in cases_data:
-                case_id = case.get("id") or case.get("caseId")
-                logger.debug("Processing case", case_id=case_id)
-                # Intentar extraer end_date de varios campos posibles
-                end_date_str = (
-                    case.get("endDate")
-                    or case.get("end_date")
-                    or case.get("endDateString")
-                    or case.get("completionDate")
-                )
-                
-                end_date = None
-                if end_date_str:
-                    try:
-                        # Parsear ISO format
-                        from datetime import datetime
-                        end_date = datetime.fromisoformat(
-                            end_date_str.replace("Z", "+00:00")
-                        )
-                    except (ValueError, AttributeError):
-                        # Si falla el parseo, dejar como None
-                        pass
-
-                if case_id:
-                    completed_cases.append({
-                        "caseId": int(case_id),
-                        "endDate": end_date.isoformat() if end_date else None,
-                    })
-
-        logger.info("Completed cases retrieved from Bonita", count=len(completed_cases))
-        return completed_cases
+        return active_cases
 
     except httpx.HTTPError as e:
-        logger.error("Bonita request error retrieving completed cases", error=str(e))
+        logger.error("Bonita request error retrieving active cases", error=str(e))
         raise ValueError(f"Bonita request error: {str(e)}")
     except Exception as e:
-        logger.error("Error retrieving completed cases from Bonita", error=str(e))
-        raise ValueError(f"Error retrieving completed cases from Bonita: {str(e)}")
+        logger.error("Error retrieving active cases from Bonita", error=str(e))
+        raise ValueError(f"Error retrieving active cases from Bonita: {str(e)}")
 

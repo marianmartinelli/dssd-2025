@@ -6,23 +6,15 @@ import {
   Container,
   Grid,
   Paper,
-  Button,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   CircularProgress,
-  Alert,
 } from '@mui/material';
 import {
   Group as UsersIcon,
-  TrendingUp as TrendingUpIcon,
   AccessTime as ClockIcon,
   Warning as AlertTriangleIcon,
   Lock as LockIcon,
   CheckCircle as CheckCircleIcon,
   BarChart as BarChart3Icon,
-  List as ListIcon,
 } from '@mui/icons-material';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { Navigate } from 'react-router-dom';
@@ -39,6 +31,9 @@ interface OngRankingItem {
 interface KpiData {
   successRate: number; // Indicador 3: % de Éxito
   lateRate: number;    // Indicador 4: % de Desvío
+  total_active: number;
+  on_time: number;
+  delayed: number;
 }
 
 interface DemandSupplyItem {
@@ -64,36 +59,39 @@ interface KpiCardProps {
   rate: number; // Tasa para determinar el color (para Indicadores 3 y 4)
 }
 
+const API_BASE = 'http://localhost:8000/api/v1/metrics'
+
 const fetchMetrics = async (): Promise<{ data?: MetricsData, error?: string }> => {
   const token = localStorage.getItem('projectplanning_token')
   try {
-    const [successRes, lateRes, rankingRes, demandRes] = await Promise.all([
-      fetch('http://localhost:8000/api/v1/metrics/global/success_rate', {
+    // Un único endpoint que devuelve successRate y lateRate
+    const [successRes, rankingRes, demandRes] = await Promise.all([
+      fetch(`${API_BASE}/global/success_rate`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      fetch('http://localhost:8000/api/v1/metrics/global/late_rate', {
+      fetch(`${API_BASE}/global/ong_ranking`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      fetch('http://localhost:8000/api/v1/metrics/global/ong_ranking', {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      fetch('http://localhost:8000/api/v1/metrics/global/demand_supply', {
+      fetch(`${API_BASE}/global/demand_supply`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     ])
 
-    for (const res of [successRes, lateRes, rankingRes, demandRes]) {
+    for (const res of [successRes, rankingRes, demandRes]) {
       if (!res.ok) return { error: `HTTP ${res.status}` }
     }
 
-    const [s, l, rank, demand] = await Promise.all(
-      [successRes, lateRes, rankingRes, demandRes].map(r => r.json())
+    const [success, rank, demand] = await Promise.all(
+      [successRes, rankingRes, demandRes].map(r => r.json())
     )
 
     const data: MetricsData = {
       kpiData: {
-        successRate: s.successRate ?? 0,
-        lateRate: l.lateRate ?? 0,
+        successRate: success.successRate ?? 0,
+        lateRate: success.lateRate ?? 0,
+        total_active: success.total_active ?? 0,
+        on_time: success.on_time ?? 0,
+        delayed: success.delayed ?? 0,
       },
       ongRankingData: rank.ranking ?? [],
       demandSupply: demand.demand_supply ?? [],
@@ -118,8 +116,6 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, description, rate
     if (rate < 25) { iconColor = 'success'; }
     else if (rate < 50) { iconColor = 'warning'; }
     else { iconColor = 'error'; }
-  } else if (title.includes('Activos')) {
-    iconColor = 'warning';
   } else {
     iconColor = 'primary';
   }
@@ -150,9 +146,11 @@ const MetricsDashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const { hasRole } = useRoleAccess()
+  
   if (!hasRole('Gerente')) {
     return <Navigate to="/projects" replace />
   }
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -217,7 +215,7 @@ const MetricsDashboard: React.FC = () => {
               value={`${data.kpiData.successRate}%`}
               rate={data.kpiData.successRate}
               icon={<CheckCircleIcon />}
-              description="Casos que finalizan exitosamente y en término."
+              description={`${data.kpiData.on_time} de ${data.kpiData.total_active} casos activos en término`}
             />
           </Grid>
 
@@ -228,14 +226,15 @@ const MetricsDashboard: React.FC = () => {
               value={`${data.kpiData.lateRate}%`}
               rate={data.kpiData.lateRate}
               icon={<AlertTriangleIcon />}
-              description="Casos que terminan fuera del cronograma original."
+              description={`${data.kpiData.delayed} de ${data.kpiData.total_active} casos activos demorados`}
             />
           </Grid>
           
         </Grid>
 
-        {/* GRÁFICO PRINCIPAL: Indicador 1 */}
+        {/* GRÁFICOS Y MÉTRICAS */}
         <Grid container spacing={4}>
+          {/* Indicador 1: Top ONGs Colaboradoras */}
           <Grid item xs={12} lg={8}>
             <Paper elevation={4} sx={{ p: 3, height: 450 }}>
               <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -265,7 +264,8 @@ const MetricsDashboard: React.FC = () => {
               </Box>
             </Paper>
           </Grid>
-          {/* Métrica 2: Demanda y Oferta */}
+
+          {/* Indicador 2: Demanda y Oferta */}
           <Grid item xs={12} lg={4}>
             {data?.demandSupply && data.demandSupply.length > 0 ? (
               // Una única tarjeta Paper que contendrá toda la lista
@@ -281,7 +281,7 @@ const MetricsDashboard: React.FC = () => {
                     <Box key={item.support_type}>
                       {/* Título del Rubro y Solicitud/Aprobación */}
                       <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5 }}>
-                        {item.support_type}
+                        {getSupportTypeLabel(item.support_type)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" mb={1}>
                         Solicitado: {item.total_requests} | Aprobados: {item.approved_requests}
@@ -291,7 +291,7 @@ const MetricsDashboard: React.FC = () => {
                       <Box component="ol" sx={{ pl: 2, m: 0 }}>
                         {item.top_3_ongs.map((ong, idx) => (
                           <Typography component="li" key={ong.ong_name} variant="body2" sx={{ ml: 1, color: 'text.primary' }}>
-                            {idx + 1}. {ong.ong_name} - {ong.commitments}
+                            {ong.ong_name} - {ong.commitments}
                           </Typography>
                         ))}
                       </Box>
@@ -308,8 +308,6 @@ const MetricsDashboard: React.FC = () => {
           </Grid>   
         </Grid>
 
-
-
         {/* Pie de página */}
         <Box component="footer" py={3} textAlign="center" mt={4}>
           <Typography variant="body2" color="text.secondary">
@@ -319,6 +317,18 @@ const MetricsDashboard: React.FC = () => {
       </Container>
     </Box>
   );
+};
+
+const SUPPORT_TYPE_LABELS: Record<string, string> = {
+  financial: 'Financiamiento',
+  materials: 'Materiales',
+  labor: 'Mano de obra',
+  logistics: 'Logística',
+  other: 'Otro',
+};
+
+const getSupportTypeLabel = (key: string): string => {
+  return SUPPORT_TYPE_LABELS[key] || key;
 };
 
 export default MetricsDashboard;
