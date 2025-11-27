@@ -57,9 +57,9 @@ interface ProjectCreatePageProps {
 export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => {
   const navigate = useNavigate()
   const [lastResult, setLastResult] = useState<ProjectCreationResponse | null>(null)
-  const [useRandomData, setUseRandomData] = useState(false)
+  const [useRandomData, setUseRandomData] = useState(true)
   const [formKey, setFormKey] = useState(0)
-  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(createDefaultValues())
+  const [formDefaultValues, setFormDefaultValues] = useState<ProjectFormValues>(() => generateRandomProjectData())
 
   const {
     control,

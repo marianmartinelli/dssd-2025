@@ -395,7 +395,7 @@ export const ProjectDetailPage = () => {
                                                 </Typography>
                                             </Grid>
                                         )}
-                                        {stage.estimatedAmount !== undefined && (
+                                        {stage.estimatedAmount != null && (
                                             <Grid item xs={12} sm={6}>
                                                 <Typography variant="caption" color="text.secondary">
                                                     Monto estimado

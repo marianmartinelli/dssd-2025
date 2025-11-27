@@ -1,12 +1,14 @@
 import {
   Card,
   CardContent,
+  CardActionArea,
   Typography,
   Box,
   Chip,
   Stack,
 } from '@mui/material'
 import { format } from 'date-fns'
+import { useNavigate } from 'react-router-dom'
 import type { ProjectListItem, ProjectStatus } from '../types/project'
 
 interface ProjectCardProps {
@@ -32,9 +34,16 @@ const getStatusColor = (status: ProjectStatus): 'info' | 'success' | 'warning' =
 }
 
 export const ProjectCard = ({ project }: ProjectCardProps) => {
+  const navigate = useNavigate()
+
+  const handleClick = () => {
+    navigate(`/projects/${project.id}`)
+  }
+
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardContent>
+      <CardActionArea onClick={handleClick}>
+        <CardContent>
         <Stack spacing={2}>
           <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
             <Typography
@@ -107,6 +116,7 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
           )}
         </Stack>
       </CardContent>
+      </CardActionArea>
     </Card>
   )
 }
