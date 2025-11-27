@@ -44,13 +44,15 @@ async def login(
     except HTTPException as exc:
         raise exc
 
-    # Crear token con user_id (si está disponible) o username, y opcionalmente bonita_session_id
+    # Crear token con user_id (si está disponible) o username, y opcionalmente bonita_session_id y role
+    role = user.get("role")
     token = create_user_token(
         user_id=user.get("user_id"),
         username=user.get("username"),
-        bonita_session_id=user.get("bonita_session_id")
+        bonita_session_id=user.get("bonita_session_id"),
+        role=role
     )
-    return Token(access_token=token)
+    return Token(access_token=token, role=role)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Cerrar sesión")

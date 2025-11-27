@@ -18,9 +18,11 @@ import { useProjects } from '../hooks/useProjects'
 import { ProjectCard } from '../components/ProjectCard'
 import { ProjectFilters } from '../components/ProjectFilters'
 import type { ProjectStatus } from '../types/project'
+import { useRoleAccess } from '../hooks/useRoleAccess'
 
 export const ProjectListPage = () => {
   const navigate = useNavigate()
+  const { isONG } = useRoleAccess()
   const [currentTab, setCurrentTab] = useState<0 | 1>(0)
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | undefined>()
 
@@ -57,7 +59,7 @@ export const ProjectListPage = () => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 4, minWidth: { sm: '600px', md: '900px', lg: '1200px' } }}>
       <Stack spacing={3}>
         {/* Header */}
         <Stack
@@ -69,14 +71,16 @@ export const ProjectListPage = () => {
           <Typography variant="h4" component="h1">
             Proyectos
           </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreateProject}
-            sx={{ width: { xs: '100%', sm: 'auto' } }}
-          >
-            Nuevo Proyecto
-          </Button>
+          {isONG && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreateProject}
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
+              Nuevo Proyecto
+            </Button>
+          )}
         </Stack>
 
         {/* Tabs */}
@@ -87,7 +91,7 @@ export const ProjectListPage = () => {
             aria-label="project tabs"
           >
             <Tab label="Todos los Proyectos" value={0} />
-            <Tab label="Mis Proyectos" value={1} />
+            {isONG && <Tab label="Mis Proyectos" value={1} />}
           </Tabs>
         </Paper>
 

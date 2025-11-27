@@ -25,6 +25,7 @@ import { CreateCollaborationModal } from '../components/CreateCollaborationModal
 import { StartProjectDialog } from '../components/StartProjectDialog'
 import { CompleteProjectDialog } from '../components/CompleteProjectDialog'
 import type { ProjectStatus, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse } from '../types/project'
+import { useRoleAccess } from '../hooks/useRoleAccess'
 
 const getStatusLabel = (status: ProjectStatus): string => {
     const labels: Record<ProjectStatus, string> = {
@@ -48,6 +49,7 @@ export const ProjectDetailPage = () => {
     const { projectId } = useParams<{ projectId: string }>()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    const { hasRole } = useRoleAccess()
     const [observationModalOpen, setObservationModalOpen] = useState(false)
     const [observationsListModalOpen, setObservationsListModalOpen] = useState(false)
     const [collaborationsModalOpen, setCollaborationsModalOpen] = useState(false)
@@ -316,22 +318,31 @@ export const ProjectDetailPage = () => {
                     </Box>
                 </Box>
 
-                <Box display="flex" justifyContent="center" gap={2} mb={3}>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => setObservationModalOpen(true)}
-                    >
-                        Registrar Observación
-                    </Button>
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        onClick={() => setObservationsListModalOpen(true)}
-                    >
-                        Ver Observaciones {project.observations?.length ? `(${project.observations.length})` : ''}
-                    </Button>
-                </Box>
+                {/* Botón de Registrar Observación - solo para Consejo Directivo */}
+                {!isOwner && project.status === 'in_progress' && hasRole('Consejo Directivo') && (
+                    <Box display="flex" justifyContent="center" gap={2} mb={3}>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => setObservationModalOpen(true)}
+                        >
+                            Registrar Observación
+                        </Button>
+                    </Box>
+                )}
+
+                {/* Botón de Ver Observaciones - solo para el owner del proyecto */}
+                {isOwner && project.observations && project.observations.length > 0 && (
+                    <Box display="flex" justifyContent="center" gap={2} mb={3}>
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={() => setObservationsListModalOpen(true)}
+                        >
+                            Ver Observaciones ({project.observations.length})
+                        </Button>
+                    </Box>
+                )}
 
                 <Divider sx={{ mb: 3 }} />
 
@@ -543,8 +554,8 @@ export const ProjectDetailPage = () => {
                                                 isOwner
                                                     ? "Los owners no pueden crear colaboraciones"
                                                     : project.status !== 'requesting_support'
-                                                    ? "No se pueden crear colaboraciones en proyectos en progreso"
-                                                    : ""
+                                                        ? "No se pueden crear colaboraciones en proyectos en progreso"
+                                                        : ""
                                             }
                                             arrow
                                         >
@@ -606,6 +617,7 @@ export const ProjectDetailPage = () => {
                 isOwner={isOwner}
                 onCreateClick={() => handleOpenCreateCollabModal(selectedStageId!, selectedStageName)}
                 currentUsername={currentUser?.username}
+                projectStatus={project.status}
             />
 
             <CreateCollaborationModal
@@ -645,24 +657,26 @@ export const ProjectDetailPage = () => {
                 onCancel={handleCloseCompleteProjectDialog}
             />
 
-            {snackbar && (
-                <Box
-                    sx={{
-                        position: 'fixed',
-                        bottom: 16,
-                        right: 16,
-                        zIndex: 9999
-                    }}
-                >
-                    <Alert
-                        severity={snackbar.severity}
-                        onClose={() => setSnackbar(null)}
-                        sx={{ minWidth: 300 }}
+            {
+                snackbar && (
+                    <Box
+                        sx={{
+                            position: 'fixed',
+                            bottom: 16,
+                            right: 16,
+                            zIndex: 9999
+                        }}
                     >
-                        {snackbar.message}
-                    </Alert>
-                </Box>
-            )}
-        </Container>
+                        <Alert
+                            severity={snackbar.severity}
+                            onClose={() => setSnackbar(null)}
+                            sx={{ minWidth: 300 }}
+                        >
+                            {snackbar.message}
+                        </Alert>
+                    </Box>
+                )
+            }
+        </Container >
     )
 }

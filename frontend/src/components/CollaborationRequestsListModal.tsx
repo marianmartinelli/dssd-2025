@@ -28,6 +28,7 @@ interface CollaborationRequestsListModalProps {
     isOwner?: boolean
     onCreateClick?: () => void
     currentUsername?: string
+    projectStatus?: string
 }
 
 export const CollaborationRequestsListModal = ({
@@ -42,6 +43,7 @@ export const CollaborationRequestsListModal = ({
     isOwner = false,
     onCreateClick,
     currentUsername,
+    projectStatus,
 }: CollaborationRequestsListModalProps) => {
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -52,14 +54,20 @@ export const CollaborationRequestsListModal = ({
                     </Typography>
                     {onCreateClick && (
                         <Tooltip
-                            title={isOwner ? "Los owners no pueden crear colaboraciones" : ""}
+                            title={
+                                isOwner
+                                    ? "Los owners no pueden crear colaboraciones"
+                                    : projectStatus !== 'requesting_support'
+                                        ? "No se pueden crear colaboraciones en proyectos en progreso"
+                                        : ""
+                            }
                             arrow
                         >
                             <span>
                                 <Button
                                     variant="contained"
                                     size="small"
-                                    disabled={isOwner}
+                                    disabled={isOwner || projectStatus !== 'requesting_support'}
                                     onClick={onCreateClick}
                                 >
                                     Crear Colaboración

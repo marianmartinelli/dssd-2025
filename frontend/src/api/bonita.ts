@@ -26,9 +26,11 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-export const login = async (username: string, password: string): Promise<void> => {
-  const { data } = await api.post<{ access_token: string }>('/auth/login', { username, password })
+export const login = async (username: string, password: string): Promise<{ role: string; username: string }> => {
+  const { data } = await api.post<{ access_token: string; role?: string }>('/auth/login', { username, password })
   localStorage.setItem('projectplanning_token', data.access_token)
+  const role = data.role || 'User'
+  return { role, username }
 }
 
 export const createProject = async (payload: ProjectFormValues): Promise<ProjectCreationResponse> => {
@@ -138,4 +140,5 @@ export const startProjectTransition = async (
 
 export const logout = (): void => {
   localStorage.removeItem('projectplanning_token')
+  localStorage.removeItem('projectplanning_user_role')
 }
