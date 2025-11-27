@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import type { AlertColor } from '@mui/material'
 import {
   Box,
@@ -56,6 +57,7 @@ interface ProjectCreatePageProps {
 
 export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [lastResult, setLastResult] = useState<ProjectCreationResponse | null>(null)
   const [useRandomData, setUseRandomData] = useState(true)
   const [formKey, setFormKey] = useState(0)
@@ -124,6 +126,12 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
     }
   }
 
+  const handleBackToProjects = () => {
+    // Invalidar la query de proyectos para forzar un fetch fresco
+    queryClient.invalidateQueries({ queryKey: ['projects'] })
+    navigate('/projects')
+  }
+
   const isLoading = isSubmitting || createProjectMutation.isPending
 
   return (
@@ -140,7 +148,7 @@ export const ProjectCreatePage = ({ onShowMessage }: ProjectCreatePageProps) => 
         <Button
           variant="outlined"
           startIcon={<ArrowBack />}
-          onClick={() => navigate('/projects')}
+          onClick={handleBackToProjects}
           sx={{ width: { xs: '100%', sm: 'auto' } }}
         >
           Volver a Proyectos
