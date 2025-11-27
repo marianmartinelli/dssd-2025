@@ -68,7 +68,7 @@ export const createObservation = async (observation: { projectId: number; title:
 }
 
 export const resolveObservation = async (observationId: number) => {
-  const { data } = await api.put(`/projects/observations/${observationId}/resolve`)
+  const { data } = await api.post(`/projects/observations/${observationId}/resolve`)
   return data
 }
 
