@@ -14,6 +14,7 @@ from app.services.metrics_service import (
     metric_late_rate,
     metric_active_projects,
     metric_avg_duration,
+    get_demand_supply_analysis,
 )
 from app.schemas.metrics import KpiData, OngRankingItem, MetricsData
 from app.models import CollaborationRequest, Project  # Asegúrate de importar tus modelos
@@ -123,7 +124,7 @@ async def get_global_success_rate(
 ) -> Dict[str, Any]:
     #require_manager(current_user)
     try:
-        stmt = select(func.count(CollaborationRequest.id))
+        stmt = select(func.count(Project.id))
         total_res = await db.execute(stmt)
         total = total_res.scalar() or 0
 
@@ -213,5 +214,24 @@ async def get_global_ong_ranking(
             for row in rows
         ]
         return {"ranking": ranking}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/global/demand_supply", status_code=status.HTTP_200_OK)
+async def get_demand_supply(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    Métrica 2: Análisis de Demanda y Oferta.
+    Devuelve para cada support_type (demanda) el top 3 de ONGs comprometidas.
+    """
+    #require_manager(current_user)
+    try:
+        result = await get_demand_supply_analysis(db)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

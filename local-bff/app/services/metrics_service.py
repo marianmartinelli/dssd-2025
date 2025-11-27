@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 from datetime import date
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project, WorkPlanStage, CollaborationRequest
@@ -172,3 +172,97 @@ async def get_project_status_distribution(session: AsyncSession) -> dict:
         "categories": [row[0] for row in rows],
         "counts": [row[1] for row in rows],
     }
+
+async def get_demand_supply_analysis(db: AsyncSession) -> Dict[str, Any]:
+    """
+    Métrica 2: Análisis de Demanda y Oferta
+    
+    Agrupa collaboration requests por support_type (demanda).
+    Para cada tipo, devuelve el top 3 de ONGs que se comprometieron (is_approved=True).
+    
+    Retorna:
+    {
+      "demand_supply": [
+        {
+          "support_type": "Dinero",
+          "total_requests": 10,
+          "approved_requests": 7,
+          "top_3_ongs": [
+            {"ong_name": "ONG A", "commitments": 5},
+            {"ong_name": "ONG B", "commitments": 2},
+            {"ong_name": "ONG C", "commitments": 1}
+          ]
+        }
+      ]
+    }
+    """
+    try:
+        # Obtener todos los support_types distintos
+        stmt_types = (
+            select(
+                WorkPlanStage.support_type,
+                func.count(WorkPlanStage.id)  
+            )
+            .distinct() 
+            .where(WorkPlanStage.support_type.isnot(None))
+            .group_by(WorkPlanStage.support_type)        
+            .order_by(desc(func.count(WorkPlanStage.id))) 
+            .limit(1)                                    
+        )
+        result_types = await db.execute(stmt_types)
+        support_types = [row[0] for row in result_types.all()]
+
+        demand_supply = []
+
+        for support_type in support_types:
+            # Total de pedidos de workplanstages para este support_type
+            stmt_total = (
+                select(func.count(WorkPlanStage.id))
+                .where(WorkPlanStage.support_type == support_type)
+            )
+            total_res = await db.execute(stmt_total)
+            total_requests = total_res.scalar() or 0
+
+            # Requests aprobados (comprometidos)
+            stmt_approved = (
+                select(func.count(CollaborationRequest.id))
+                .join(WorkPlanStage, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
+                .where(WorkPlanStage.support_type == support_type)
+                .where(CollaborationRequest.is_approved == True)
+            )
+            approved_res = await db.execute(stmt_approved)
+            approved_requests = approved_res.scalar() or 0
+
+            # Top 3 ONGs que se comprometieron (is_approved=True) para este support_type
+            stmt_ongs = (
+                select(
+                    Project.requesting_organization,
+                    func.count(CollaborationRequest.id).label("commitment_count")
+                )
+                .join(WorkPlanStage, Project.id == WorkPlanStage.project_id)
+                .join(CollaborationRequest, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
+                .where(WorkPlanStage.support_type == support_type)
+                .where(CollaborationRequest.is_approved == True)
+                .group_by(Project.requesting_organization)
+                .order_by(func.count(CollaborationRequest.id).desc())
+                .limit(3)
+            )
+            ongs_res = await db.execute(stmt_ongs)
+            ongs_rows = ongs_res.all()
+
+            top_3_ongs = [
+                {"ong_name": row[0], "commitments": row[1]}
+                for row in ongs_rows
+            ]
+
+            demand_supply.append({
+                "support_type": support_type,
+                "total_requests": total_requests,
+                "approved_requests": approved_requests,
+                "top_3_ongs": top_3_ongs,
+            })
+
+        return {"demand_supply": demand_supply}
+
+    except Exception as e:
+        raise ValueError(f"Error analyzing demand/supply: {str(e)}")

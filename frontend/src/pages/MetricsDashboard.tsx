@@ -37,13 +37,20 @@ interface OngRankingItem {
 interface KpiData {
   successRate: number; // Indicador 3: % de Éxito
   lateRate: number;    // Indicador 4: % de Desvío
-  activeProjects: number;
+}
+
+interface DemandSupplyItem {
+  support_type: string
+  total_requests: number
+  approved_requests: number
+  top_3_ongs: { ong_name: string; commitments: number }[]
 }
 
 // Tipo de dato para la respuesta completa de la API
 interface MetricsData {
-  ongRankingData: OngRankingItem[];
   kpiData: KpiData;
+  ongRankingData: OngRankingItem[];
+  demandSupply: DemandSupplyItem[];
 }
 
 // Propiedades del componente KpiCard
@@ -59,42 +66,38 @@ interface KpiCardProps {
 const fetchMetrics = async (): Promise<{ data?: MetricsData, error?: string }> => {
   const token = localStorage.getItem('projectplanning_token')
   try {
-    // Obtener métricas agregadas (sin project_id)
-    const responses = await Promise.all([
+    const [successRes, lateRes, rankingRes, demandRes] = await Promise.all([
       fetch('http://localhost:8000/api/v1/metrics/global/success_rate', {
         headers: { Authorization: `Bearer ${token}` },
       }),
       fetch('http://localhost:8000/api/v1/metrics/global/late_rate', {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      fetch('http://localhost:8000/api/v1/metrics/global/active_projects', {
+      fetch('http://localhost:8000/api/v1/metrics/global/ong_ranking', {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      fetch('http://localhost:8000/api/v1/metrics/global/ong_ranking', {
+      fetch('http://localhost:8000/api/v1/metrics/global/demand_supply', {
         headers: { Authorization: `Bearer ${token}` },
       }),
     ])
 
-    // Validar respuestas
-    for (const res of responses) {
-      if (!res.ok) {
-        return { error: `HTTP ${res.status}` }
-      }
+    for (const res of [successRes, lateRes, rankingRes, demandRes]) {
+      if (!res.ok) return { error: `HTTP ${res.status}` }
     }
 
-    const [successRes, lateRes, activeRes, rankingRes] = await Promise.all(
-      responses.map(r => r.json())
+    const [s, l, rank, demand] = await Promise.all(
+      [successRes, lateRes, rankingRes, demandRes].map(r => r.json())
     )
 
     const data: MetricsData = {
       kpiData: {
-        successRate: successRes.successRate ?? 0,
-        lateRate: lateRes.lateRate ?? 0,
-        activeProjects: activeRes.count ?? 0,
+        successRate: s.successRate ?? 0,
+        lateRate: l.lateRate ?? 0,
       },
-      ongRankingData: rankingRes.ranking ?? [],
+      ongRankingData: rank.ranking ?? [],
+      demandSupply: demand.demand_supply ?? [],
     }
-    
+
     return { data }
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -103,7 +106,6 @@ const fetchMetrics = async (): Promise<{ data?: MetricsData, error?: string }> =
 
 // --- COMPONENTE AUXILIAR (BASADO EN MUI) ---
 const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, description, rate }) => {
-  let color: 'success' | 'warning' | 'error' | 'primary' = 'primary';
   let iconColor: 'success' | 'warning' | 'error' | 'primary' = 'primary';
 
   // Lógica para Indicadores 3 y 4 (Éxito y Desvío)
@@ -225,28 +227,7 @@ const MetricsDashboard: React.FC = () => {
               description="Casos que terminan fuera del cronograma original."
             />
           </Grid>
-
-          {/* Métrica de ejemplo: Proyectos Activos */}
-          <Grid item xs={12} sm={6} md={3}>
-            <KpiCard
-              title="Proyectos Activos"
-              value={data.kpiData.activeProjects}
-              rate={0}
-              icon={<ListIcon />}
-              description="Procesos de Proyecto en estado 'En Ejecución'."
-            />
-          </Grid>
-
-          {/* Métrica de ejemplo: Tasa de Compromiso */}
-          <Grid item xs={12} sm={6} md={3}>
-            <KpiCard
-              title="Compromiso Cumplido"
-              value="92%"
-              rate={92}
-              icon={<TrendingUpIcon />}
-              description="Compromisos marcados como 'Commit & Complete'."
-            />
-          </Grid>
+          
         </Grid>
 
         {/* GRÁFICO PRINCIPAL: Indicador 1 */}
@@ -255,7 +236,7 @@ const MetricsDashboard: React.FC = () => {
             <Paper elevation={4} sx={{ p: 3, height: 450 }}>
               <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <UsersIcon color="primary" sx={{ mr: 1 }} />
-                Indicador 1: Top ONGs Colaboradoras
+                Top ONGs Colaboradoras
               </Typography>
               <Typography variant="body2" color="text.secondary" mb={2}>
                 ONGs con la mayor cantidad de actividades de colaboración ejecutadas.
@@ -280,7 +261,50 @@ const MetricsDashboard: React.FC = () => {
               </Box>
             </Paper>
           </Grid>
+          {/* Métrica 2: Demanda y Oferta */}
+          <Grid item xs={12} lg={4}>
+            {data?.demandSupply && data.demandSupply.length > 0 ? (
+              // Una única tarjeta Paper que contendrá toda la lista
+              <Paper elevation={4} sx={{ p: 3, height: '100%' }}>
+                
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, borderBottom: 1, borderColor: 'divider', pb: 1, mb: 2 }}>
+                  Rubro Más Solicitado / Top ONGs que lo proveen
+                </Typography>
+
+                {/* Iteración sobre cada rubro solicitado */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {data.demandSupply.map((item) => (
+                    <Box key={item.support_type}>
+                      {/* Título del Rubro y Solicitud/Aprobación */}
+                      <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        {item.support_type}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" mb={1}>
+                        Solicitado: {item.total_requests} | Aprobados: {item.approved_requests}
+                      </Typography>
+                      
+                      {/* Listado de Top ONGs Contribuyentes */}
+                      <Box component="ol" sx={{ pl: 2, m: 0 }}>
+                        {item.top_3_ongs.map((ong, idx) => (
+                          <Typography component="li" key={ong.ong_name} variant="body2" sx={{ ml: 1, color: 'text.primary' }}>
+                            {idx + 1}. {ong.ong_name} - {ong.commitments}
+                          </Typography>
+                        ))}
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              </Paper>
+            ) : (
+              // Mensaje si no hay datos de demanda/oferta
+              <Paper elevation={4} sx={{ p: 3, textAlign: 'center', height: '100%' }}>
+                <Typography color="text.secondary">Sin datos de demanda/oferta</Typography>
+              </Paper>
+            )}
+          </Grid>   
         </Grid>
+
+
 
         {/* Pie de página */}
         <Box component="footer" py={3} textAlign="center" mt={4}>
