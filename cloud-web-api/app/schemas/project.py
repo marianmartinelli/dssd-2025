@@ -102,10 +102,10 @@ class ProjectResponse(CamelCaseModel):
 class CollaborationRequestCreate(CamelCaseModel):
     project_id: int
     stage_id: int
-    title: constr(strip_whitespace=True, min_length=3, max_length=150)
-    description: Optional[constr(strip_whitespace=True, min_length=5, max_length=1000)] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=150)
+    description: Optional[str] = Field(None, max_length=1000)
     requested_amount: Optional[float] = Field(None, ge=0)
-    amount_currency: Optional[str] = Field(None, min_length=3, max_length=3)
+    amount_currency: Optional[str] = Field(None, max_length=3)
     external_ref: Optional[str] = None
 
 
