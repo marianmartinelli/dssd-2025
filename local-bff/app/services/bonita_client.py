@@ -483,6 +483,7 @@ class BonitaClient:
         """
         Construye el payload del contrato para actualizaciones de proyecto.
         Incluye el proyecto completo con sus etapas y colaboraciones.
+        Usa los mismos nombres de campos que proyectoContrato para estandarización.
 
         Args:
             project: Objeto Project con relaciones cargadas (stages, collaborations)
@@ -505,45 +506,57 @@ class BonitaClient:
                     org_name = getattr(collab, "committed_by_organization", "Particular")
 
                 collaborations_data.append({
-                    "externalRef": collab.external_ref if hasattr(collab, 'external_ref') else None,
+                    "persistenceId_string": str(collab.id),
+                    "externalRef": collab.external_ref if hasattr(collab, 'external_ref') else "",
                     "collaborationId": collab.id,
-                    "title": collab.title,
+                    "title": collab.title or "",
                     "description": collab.description or "",
-                    "requestedAmount": collab.requested_amount,
-                    "amountCurrency": collab.amount_currency,
-                    "requestedDate": collab.requested_date.isoformat() if collab.requested_date else "",
-                    "isApproved": collab.is_approved,
-                    "isCompleted": collab.is_completed,
+                    "requestedAmount": collab.requested_amount or 0.0,
+                    "amountCurrency": collab.amount_currency or "",
+                    "requestedDate": collab.requested_date.strftime("%Y-%m-%dT%H:%M:%SZ") if collab.requested_date else "",
+                    "isApproved": collab.is_approved if collab.is_approved is not None else False,
+                    "isCompleted": collab.is_completed if collab.is_completed is not None else False,
                     "committedBy": collab.committed_by or "",
                     "committedByOrganization": org_name,
                 })
 
             stages_data.append({
-                "externalRef": stage.external_ref if hasattr(stage, 'external_ref') else None,
+                "persistenceId_string": str(stage.id),
+                "externalRef": stage.external_ref if hasattr(stage, 'external_ref') else "",
                 "stageId": stage.id,
-                "stageName": stage.stage_name,
+                "stageName": stage.stage_name or "",
                 "stageStart": stage.stage_start.isoformat() if stage.stage_start else "",
                 "stageEnd": stage.stage_end.isoformat() if stage.stage_end else "",
                 "supportType": stage.support_type or "",
                 "description": stage.description or "",
-                "estimatedAmount": stage.estimated_amount,
+                "estimatedAmount": stage.estimated_amount or 0.0,
                 "amountCurrency": stage.amount_currency or "",
-                "isCompleted": stage.is_completed,
+                "isCompleted": stage.is_completed if stage.is_completed is not None else False,
                 "collaborations": collaborations_data,
             })
 
         return {
             "projectUpdate": {
-                "externalRef": project.external_ref if hasattr(project, 'external_ref') else None,
+                "persistenceId_string": str(project.id),
+                "externalRef": project.external_ref if hasattr(project, 'external_ref') else "",
                 "projectId": project.id,
-                "caseId": project.case_id,
-                "title": project.project_name,
-                "description": project.project_description or "",
-                "requestedAmount": project.estimated_budget,
-                "amountCurrency": project.currency or "",
-                "status": project.status,
+                "caseId": str(project.case_id) if project.case_id else "",
+                "projectName": project.project_name,
+                "projectDescription": project.project_description or "",
+                "projectCategory": project.project_category if hasattr(project, 'project_category') else "",
+                "requestingOrganization": project.requesting_organization if hasattr(project, 'requesting_organization') else "",
+                "contactEmail": project.contact_email if hasattr(project, 'contact_email') else "",
+                "contactPhone": project.contact_phone if hasattr(project, 'contact_phone') else "",
+                "estimatedBudget": project.estimated_budget or 0.0,
+                "currency": project.currency or "",
+                "startDate": project.start_date.isoformat() if hasattr(project, 'start_date') and project.start_date else "",
+                "endDate": project.end_date.isoformat() if hasattr(project, 'end_date') and project.end_date else "",
+                "priorityLevel": project.priority_level if hasattr(project, 'priority_level') else "",
+                "supportingDocsUrl": project.supporting_docs_url if hasattr(project, 'supporting_docs_url') else "",
+                "workPlanStages": stages_data,
+                "submissionTimestamp": project.start_date.strftime("%Y-%m-%dT00:00:00Z") if hasattr(project, 'start_date') and project.start_date else "",
                 "initiatorUserId": project.initiator_user_id or "",
-                "stages": stages_data,
+                "status": project.status,
             }
         }
 

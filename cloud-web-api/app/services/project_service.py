@@ -596,3 +596,24 @@ async def get_collaboration_by_external_ref(external_ref: str, session: AsyncSes
     result = await session.execute(stmt)
     collaboration = result.scalar_one_or_none()
     return collaboration
+
+
+async def get_stage_by_external_ref_and_project(project_id: int, stage_external_ref: str, session: AsyncSession) -> Optional[WorkPlanStage]:
+    """
+    Get a specific work plan stage by external_ref within a specific project.
+
+    Args:
+        project_id (int): The ID of the project.
+        stage_external_ref (str): The external_ref of the stage to retrieve.
+        session (AsyncSession): The database session.
+
+    Returns:
+        Optional[WorkPlanStage]: The work plan stage if found, or None if not found.
+    """
+    stmt = select(WorkPlanStage).where(
+        WorkPlanStage.external_ref == stage_external_ref,
+        WorkPlanStage.project_id == project_id
+    ).options(selectinload(WorkPlanStage.project))
+    result = await session.execute(stmt)
+    stage = result.scalar_one_or_none()
+    return stage

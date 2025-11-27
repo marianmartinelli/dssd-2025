@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ObservationCreate, ObservationResponse
 from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, get_project_by_external_ref, get_observation_by_external_ref, get_collaboration_by_external_ref, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, get_project_by_external_ref, get_observation_by_external_ref, get_collaboration_by_external_ref, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service, get_stage_by_external_ref_and_project
 
 router = APIRouter()
 settings = get_settings()
@@ -335,7 +335,7 @@ async def complete_stage(
 ) -> WorkPlanStageResponse:
     """
     Completa una etapa del plan de trabajo, cambiando is_completed a true.
-    
+
     Solo el owner del proyecto puede completar etapas del plan de trabajo.
     """
     try:
@@ -348,6 +348,42 @@ async def complete_stage(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
         )
+
+
+@router.get(
+    "/{project_id}/stages/by-external-ref/{stage_external_ref}",
+    response_model=WorkPlanStageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Buscar etapa del plan de trabajo por external_ref dentro de un proyecto",
+)
+async def get_stage_by_external_reference(
+    project_id: int,
+    stage_external_ref: str,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> WorkPlanStageResponse:
+    """
+    Obtiene una etapa del plan de trabajo específica por su external_ref dentro de un proyecto.
+
+    Requiere autenticación JWT.
+    """
+    try:
+        stage = await get_stage_by_external_ref_and_project(project_id, stage_external_ref, session)
+        if not stage:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Etapa no encontrada en este proyecto",
+            )
+        return WorkPlanStageResponse.model_validate(stage)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener etapa: {str(e)}",
+        )
+
 
 @router.get(
     "/observations/by-external-ref/{external_ref}",
