@@ -44,6 +44,7 @@ class ProjectBase(CamelCaseModel):
     end_date: date
     priority_level: PriorityLevel
     supporting_docs_url: Optional[str] = None
+    external_ref: Optional[str] = None
 
 
 class ProjectCreate(ProjectBase):
