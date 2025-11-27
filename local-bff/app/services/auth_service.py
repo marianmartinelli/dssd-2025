@@ -32,11 +32,18 @@ async def authenticate_user(username: str, password: str, db_session: Optional[A
     try:
         if settings.use_bonita:
             # Autenticar contra Bonita
+            from app.services.bonita_client import BonitaUserService
+            
             session = await BonitaSessionManager.create_session(username, password)
-            logger.info("User authenticated via Bonita", username=username)
+            
+            # Obtener rol del usuario
+            role = await BonitaUserService.get_user_role(session)
+            
+            logger.info("User authenticated via Bonita", username=username, role=role)
             return {
                 "username": username,
                 "bonita_session_id": session.session_id,
+                "role": role,
             }
         else:
             # Autenticar contra la base de datos
@@ -66,7 +73,7 @@ async def authenticate_user(username: str, password: str, db_session: Optional[A
         ) from e
 
 
-def create_user_token(user_id: Optional[int] = None, username: Optional[str] = None, bonita_session_id: Optional[str] = None) -> str:
+def create_user_token(user_id: Optional[int] = None, username: Optional[str] = None, bonita_session_id: Optional[str] = None, role: Optional[str] = None) -> str:
     """
     Crea un JWT con el user_id (o username si usa Bonita) y opcionalmente el session ID de Bonita.
 
@@ -74,6 +81,7 @@ def create_user_token(user_id: Optional[int] = None, username: Optional[str] = N
         user_id: ID del usuario autenticado (requerido si USE_BONITA=false)
         username: Usuario autenticado (usado como fallback si USE_BONITA=true y no hay user_id)
         bonita_session_id: Session ID de Bonita (solo si USE_BONITA=true)
+        role: Rol del usuario en Bonita (solo si USE_BONITA=true)
 
     Returns:
         JWT token codificado
@@ -83,6 +91,9 @@ def create_user_token(user_id: Optional[int] = None, username: Optional[str] = N
 
     if bonita_session_id:
         additional_claims["bonita_session_id"] = bonita_session_id
+    
+    if role:
+        additional_claims["role"] = role
 
     # Usar user_id como subject si está disponible, sino usar username
     subject = str(user_id) if user_id is not None else username

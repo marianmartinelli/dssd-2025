@@ -4,11 +4,13 @@ from pydantic import BaseModel, Field
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    role: str | None = None
 
 
 class TokenPayload(BaseModel):
     sub: str | None = None
     bonita_session_id: str | None = None  # Optional: only present when USE_BONITA=true
+    role: str | None = None  # Optional: user role from Bonita
 
 
 class LoginRequest(BaseModel):

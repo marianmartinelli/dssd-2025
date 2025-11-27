@@ -19,6 +19,96 @@ logger = get_logger()
 settings = get_settings()
 
 
+class BonitaUserService:
+    """Servicio para obtener información de usuarios en Bonita."""
+
+    @staticmethod
+    async def get_user_role(session: BonitaSession) -> str | None:
+        """
+        Obtiene el rol principal del usuario autenticado en Bonita.
+
+        Args:
+            session: Sesión de Bonita autenticada
+
+        Returns:
+            Nombre del rol del usuario, o None si no se encuentra
+
+        Raises:
+            HTTPException: Si hay error al consultar la información
+        """
+        try:
+            # 1. Obtener user_id de la sesión actual
+            session_response = await session.client.get(
+                "/bonita/API/system/session/1",
+                headers=session.auth_headers
+            )
+
+            if session_response.status_code != status.HTTP_200_OK:
+                logger.error(
+                    "Failed to get user session",
+                    status_code=session_response.status_code,
+                    body=session_response.text
+                )
+                return None
+
+            session_data = session_response.json()
+            user_id = session_data.get("user_id")
+
+            if not user_id:
+                logger.warning("user_id not found in session data")
+                return None
+
+            # 2. Obtener membresías del usuario
+            membership_response = await session.client.get(
+                f"/bonita/API/identity/membership?f=user_id={user_id}",
+                headers=session.auth_headers
+            )
+
+            if membership_response.status_code != status.HTTP_200_OK:
+                logger.error(
+                    "Failed to get user membership",
+                    status_code=membership_response.status_code,
+                    body=membership_response.text
+                )
+                return None
+
+            memberships = membership_response.json()
+            if not memberships:
+                logger.warning("No memberships found for user", user_id=user_id)
+                return None
+
+            # Tomar el primer rol (podría ser la membresía principal)
+            role_id = memberships[0].get("role_id")
+
+            if not role_id:
+                logger.warning("role_id not found in membership", user_id=user_id)
+                return None
+
+            # 3. Obtener información del rol
+            role_response = await session.client.get(
+                f"/bonita/API/identity/role/{role_id}",
+                headers=session.auth_headers
+            )
+
+            if role_response.status_code != status.HTTP_200_OK:
+                logger.error(
+                    "Failed to get role information",
+                    status_code=role_response.status_code,
+                    body=role_response.text
+                )
+                return None
+
+            role_data = role_response.json()
+            role_name = role_data.get("name")
+
+            logger.info("User role retrieved", user_id=user_id, role_name=role_name)
+            return role_name
+
+        except Exception as e:
+            logger.error("Error getting user role", error=str(e))
+            return None
+
+
 class BonitaClient:
     """Cliente para interactuar con Bonita BPM usando una sesión autenticada."""
 
