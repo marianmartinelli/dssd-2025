@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 import httpx
 from fastapi import HTTPException, status
@@ -11,6 +11,9 @@ from structlog import get_logger
 from app.core.config import get_settings
 from app.schemas.project import ProjectCreate, WorkPlanStage, ObservationCreate
 from app.services.bonita_session_manager import BonitaSession
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 logger = get_logger()
 settings = get_settings()
@@ -172,7 +175,7 @@ class BonitaClient:
                 params=params,
                 headers=self.session.auth_headers
             )
-            
+
             if response.status_code != status.HTTP_200_OK:
                 logger.error(
                     "Failed to get task by case ID",
@@ -187,7 +190,7 @@ class BonitaClient:
                 task_id = data[0]["id"]
                 logger.info("Task retrieved", case_id=case_id, task_id=task_id, attempt=attempt + 1)
                 return task_id
-            
+
             # Se aplica un retardo antes del siguiente intento
             # Porque Bonita tarda en crear el HumanTask luego de instanciar el proceso
             if attempt < max_retries - 1:
@@ -206,6 +209,80 @@ class BonitaClient:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No task found for case {case_id} after {max_retries} attempts",
         )
+
+    async def get_task_by_case_and_name(
+        self,
+        case_id: str,
+        task_name: str,
+        max_retries: int = 10,
+        retry_delay: float = 0.5
+    ) -> str | None:
+        """
+        Obtiene el taskId a partir del caseId y nombre de tarea específico con reintentos.
+
+        Args:
+            case_id: El ID del caso en Bonita
+            task_name: Nombre exacto de la tarea a buscar
+            max_retries: Número máximo de reintentos
+            retry_delay: Tiempo de espera entre reintentos
+
+        Returns:
+            El task ID si se encuentra, None si no existe después de todos los reintentos
+
+        Raises:
+            HTTPException: Si hay error de comunicación con Bonita
+        """
+        for attempt in range(max_retries):
+            # First, get all tasks for this case to debug
+            params_all = {"f": f"caseId={case_id}"}
+            response_all = await self.session.client.get(
+                "/bonita/API/bpm/userTask",
+                params=params_all,
+                headers=self.session.auth_headers
+            )
+
+            if response_all.status_code == status.HTTP_200_OK:
+                all_tasks = response_all.json()
+                logger.info(
+                    "All tasks for case",
+                    case_id=case_id,
+                    tasks=[{"id": t.get("id"), "name": t.get("name"), "state": t.get("state")} for t in all_tasks]
+                )
+
+                # Find task by name in the results
+                for task in all_tasks:
+                    if task.get("name") == task_name:
+                        task_id = task["id"]
+                        logger.info(
+                            "Task found by manual filtering",
+                            case_id=case_id,
+                            task_name=task_name,
+                            task_id=task_id,
+                            attempt=attempt + 1
+                        )
+                        return task_id
+
+            # Se aplica un retardo antes del siguiente intento
+            # Porque Bonita tarda en crear el HumanTask luego de completar la tarea anterior
+            if attempt < max_retries - 1:
+                logger.info(
+                    "No task found yet, retrying...",
+                    case_id=case_id,
+                    task_name=task_name,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    retry_in_seconds=retry_delay,
+                )
+                await asyncio.sleep(retry_delay)
+
+        # Si después de todos los reintentos no hay tarea, retornar None
+        logger.warning(
+            "No task found after all retries",
+            case_id=case_id,
+            task_name=task_name,
+            max_retries=max_retries
+        )
+        return None
 
     async def _get_logged_user(self) -> str:
         """Obtiene el ID del usuario logueado en Bonita"""
@@ -269,6 +346,103 @@ class BonitaClient:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to complete task in Bonita")
 
         logger.info("Task completed", task_id=task_id)
+
+    async def complete_task_with_contract(self, task_id: str, contract_data: Dict[str, Any]) -> None:
+        """
+        Completa una tarea en Bonita con datos de contrato.
+
+        Args:
+            task_id: ID de la tarea a completar
+            contract_data: Diccionario con los datos del contrato
+
+        Raises:
+            HTTPException: Si falla la completación de la tarea
+        """
+        response = await self.session.client.post(
+            f"/bonita/API/bpm/userTask/{task_id}/execution",
+            headers=self.session.auth_headers,
+            content=json.dumps(contract_data),
+        )
+
+        if response.status_code not in (status.HTTP_200_OK, status.HTTP_204_NO_CONTENT):
+            logger.error(
+                "Failed to complete task with contract",
+                status_code=response.status_code,
+                task_id=task_id,
+                body=response.text,
+                contract_keys=list(contract_data.keys()),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to complete task in Bonita: {response.text}"
+            )
+
+        logger.info("Task completed with contract", task_id=task_id, contract_keys=list(contract_data.keys()))
+
+    def build_project_update_contract(self, project: "Project") -> Dict[str, Any]:
+        """
+        Construye el payload del contrato para actualizaciones de proyecto.
+        Incluye el proyecto completo con sus etapas y colaboraciones.
+
+        Args:
+            project: Objeto Project con relaciones cargadas (stages, collaborations)
+
+        Returns:
+            Diccionario con la estructura del contrato para Bonita
+        """
+        from app.models.user import User
+        from sqlalchemy import select
+
+        stages_data = []
+        for stage in project.work_plan_stages:
+            collaborations_data = []
+            for collab in stage.collaboration_requests:
+                # Get organization name if available
+                org_name = "Particular"
+                if collab.committed_by:
+                    # Note: We'll need to pass this from the service layer
+                    # or query it here if we have access to session
+                    org_name = getattr(collab, "committed_by_organization", "Particular")
+
+                collaborations_data.append({
+                    "collaborationId": collab.id,
+                    "title": collab.title,
+                    "description": collab.description or "",
+                    "requestedAmount": collab.requested_amount,
+                    "amountCurrency": collab.amount_currency,
+                    "requestedDate": collab.requested_date.isoformat() if collab.requested_date else "",
+                    "isApproved": collab.is_approved,
+                    "isCompleted": collab.is_completed,
+                    "committedBy": collab.committed_by or "",
+                    "committedByOrganization": org_name,
+                })
+
+            stages_data.append({
+                "stageId": stage.id,
+                "stageName": stage.stage_name,
+                "stageStart": stage.stage_start.isoformat() if stage.stage_start else "",
+                "stageEnd": stage.stage_end.isoformat() if stage.stage_end else "",
+                "supportType": stage.support_type or "",
+                "description": stage.description or "",
+                "estimatedAmount": stage.estimated_amount,
+                "amountCurrency": stage.amount_currency or "",
+                "isCompleted": stage.is_completed,
+                "collaborations": collaborations_data,
+            })
+
+        return {
+            "projectUpdate": {
+                "projectId": project.id,
+                "caseId": project.case_id,
+                "title": project.project_name,
+                "description": project.project_description or "",
+                "requestedAmount": project.estimated_budget,
+                "amountCurrency": project.currency or "",
+                "status": project.status,
+                "initiatorUserId": project.initiator_user_id or "",
+                "stages": stages_data,
+            }
+        }
 
 
 async def instantiate_project(client: BonitaClient, project: ProjectCreate, initiator_username: str) -> Dict[str, Any]:
@@ -375,4 +549,130 @@ async def instantiate_observation(client: BonitaClient, observation: Observation
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing observation workflow: {str(e)}"
+        )
+
+
+async def advance_project_in_bonita(
+    client: BonitaClient,
+    project: "Project",
+    expected_task_name: str,
+    initiator_username: str
+) -> Dict[str, Any]:
+    """
+    Avanza un proyecto a la siguiente etapa del proceso Bonita.
+
+    Pasos:
+    1. Busca la tarea actual por case_id y nombre esperado
+    2. Asigna la tarea al usuario logueado
+    3. Construye el contrato con el estado completo del proyecto
+    4. Completa la tarea con el contrato
+
+    Args:
+        client: Cliente de Bonita autenticado
+        project: Proyecto con todas sus relaciones cargadas
+        expected_task_name: Nombre de la tarea que esperamos encontrar
+        initiator_username: Username del usuario que ejecuta la acción
+
+    Returns:
+        Dict con taskId completado y información de la transición
+
+    Raises:
+        HTTPException: Si no se encuentra la tarea o falla la completación
+    """
+    if not project.case_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project does not have a Bonita case ID"
+        )
+
+    try:
+        # First, get all current tasks to see what's actually available
+        params_all = {"f": f"caseId={project.case_id}"}
+        response_all = await client.session.client.get(
+            "/bonita/API/bpm/userTask",
+            params=params_all,
+            headers=client.session.auth_headers
+        )
+
+        current_tasks = []
+        if response_all.status_code == status.HTTP_200_OK:
+            current_tasks = response_all.json()
+            logger.info(
+                "Current tasks in Bonita before advancing",
+                case_id=project.case_id,
+                expected_task=expected_task_name,
+                current_tasks=[{"id": t.get("id"), "name": t.get("name"), "state": t.get("state")} for t in current_tasks],
+                project_id=project.id
+            )
+
+        # 1. Buscar la tarea por caso y nombre
+        task_id = await client.get_task_by_case_and_name(
+            case_id=str(project.case_id),
+            task_name=expected_task_name
+        )
+
+        if not task_id:
+            # Log what tasks ARE available
+            available_task_names = [t.get("name") for t in current_tasks] if current_tasks else []
+            logger.warning(
+                "Expected task not found in Bonita",
+                case_id=project.case_id,
+                expected_task=expected_task_name,
+                available_tasks=available_task_names,
+                project_id=project.id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task '{expected_task_name}' not found for case {project.case_id}. Available tasks: {available_task_names}"
+            )
+
+        logger.info(
+            "Task found in Bonita",
+            task_id=task_id,
+            task_name=expected_task_name,
+            case_id=project.case_id,
+            project_id=project.id
+        )
+
+        # 2. Asignar tarea al usuario actual
+        user_id = await client._get_logged_user()
+        await client.assign_task_to_user(task_id, user_id)
+
+        # 3. Construir contrato con el estado completo del proyecto
+        contract_data = client.build_project_update_contract(project)
+
+        # 4. Completar la tarea con el contrato
+        await client.complete_task_with_contract(task_id, contract_data)
+
+        logger.info(
+            "Project advanced in Bonita successfully",
+            task_id=task_id,
+            task_name=expected_task_name,
+            project_id=project.id,
+            case_id=project.case_id,
+            new_status=project.status
+        )
+
+        return {
+            "task_id": task_id,
+            "task_name": expected_task_name,
+            "case_id": project.case_id,
+            "project_id": project.id,
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(
+            "Unexpected error advancing project in Bonita",
+            error=str(e),
+            error_type=type(e).__name__,
+            task_name=expected_task_name,
+            project_id=project.id,
+            case_id=project.case_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error advancing project in Bonita: {str(e)}"
         )

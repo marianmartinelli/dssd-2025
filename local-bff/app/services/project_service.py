@@ -8,6 +8,18 @@ from sqlalchemy.orm import selectinload
 from app.models.project import CollaborationRequest, WorkPlanStage
 from datetime import datetime
 from fastapi import HTTPException, status
+from structlog import get_logger
+from app.core.config import get_settings
+
+logger = get_logger()
+settings = get_settings()
+
+# Bonita task names - must match exactly as defined in Bonita process
+# Note: These names have specific spacing and accents that must match Bonita exactly
+# Process flow: Registrar Proyecto -> Responder pedidos/compromisos -> Seleccionar compromisos -> Ejecucion del proyecto -> Registro del Proyecto Concluido
+BONITA_TASK_RESPONDER_PEDIDOS = "Responder pedidos / compromisos"
+BONITA_TASK_SELECCIONAR_COMPROMISOS = "Seleccionar compromisos"
+BONITA_TASK_EJECUCION_PROYECTO = "Ejecucion del proyecto"  # Note: sin tilde en la 'o'
 
 async def save_project(
     payload: ProjectCreate,
@@ -192,6 +204,32 @@ async def create_collaboration_request(
         session.add(collab)
         await session.commit()
         await session.refresh(collab)
+
+        # Check if this is the first collaboration and advance in Bonita if enabled
+        if settings.use_bonita and project.case_id:
+            from sqlalchemy import func
+            from app.api.deps import get_bonita_client
+            from app.services.bonita_client import advance_project_in_bonita
+
+            # Count total collaborations for this project
+            stmt_count = (
+                select(func.count(CollaborationRequest.id))
+                .join(WorkPlanStage)
+                .where(WorkPlanStage.project_id == project_id)
+            )
+            result_count = await session.execute(stmt_count)
+            total_collabs = result_count.scalar()
+
+            # Just log that a collaboration was created - don't advance Bonita yet
+            # The task "Responder pedidos/compromisos" remains open for owner to review
+            logger.info(
+                "Collaboration created for project",
+                project_id=project_id,
+                collaboration_id=collab.id,
+                total_collaborations=total_collabs,
+                collaborator=current_user["username"]
+            )
+
         return collab
     except Exception as exc:
         await session.rollback()
@@ -303,10 +341,71 @@ async def commit_collaboration_request(
     
     # Aprobar la colaboración
     collab.is_approved = True
-    
+
     try:
         await session.commit()
         await session.refresh(collab)
+
+        # Check if this is the first approved collaboration and advance in Bonita if enabled
+        if settings.use_bonita and project.case_id:
+            from sqlalchemy import func
+            from app.api.deps import get_bonita_client
+            from app.services.bonita_client import advance_project_in_bonita
+
+            # Count approved collaborations for this project
+            stmt_count = (
+                select(func.count(CollaborationRequest.id))
+                .join(WorkPlanStage)
+                .where(
+                    WorkPlanStage.project_id == project.id,
+                    CollaborationRequest.is_approved == True
+                )
+            )
+            result_count = await session.execute(stmt_count)
+            approved_count = result_count.scalar()
+
+            # If this is the first approval, complete "Responder pedidos/compromisos"
+            # and advance to "Seleccionar compromisos"
+            if approved_count == 1:
+                try:
+                    # Refresh project with all relationships
+                    await session.refresh(project, ["work_plan_stages"])
+                    for stage in project.work_plan_stages:
+                        await session.refresh(stage, ["collaboration_requests"])
+
+                    # Get Bonita client (owner is approving, so they have the session)
+                    bonita_client = await get_bonita_client(current_user)
+
+                    # Complete the current task "Responder pedidos / compromisos"
+                    await advance_project_in_bonita(
+                        client=bonita_client,
+                        project=project,
+                        expected_task_name=BONITA_TASK_RESPONDER_PEDIDOS,
+                        initiator_username=current_user["username"]
+                    )
+                    logger.info(
+                        "Advanced project in Bonita after first approval - completed 'Responder pedidos / compromisos'",
+                        project_id=project.id,
+                        collaboration_id=collab.id
+                    )
+                except HTTPException as http_exc:
+                    # Bonita disabled or session issues - log but don't fail
+                    logger.warning(
+                        "Could not advance project in Bonita (non-blocking)",
+                        project_id=project.id,
+                        collaboration_id=collab.id,
+                        status_code=http_exc.status_code,
+                        detail=http_exc.detail
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to advance project in Bonita after first approval",
+                        project_id=project.id,
+                        collaboration_id=collab.id,
+                        error=str(e)
+                    )
+                    # Don't fail the approval, just log the error
+
         return collab
     except Exception as exc:
         await session.rollback()
@@ -548,6 +647,47 @@ async def complete_project(
     try:
         await session.commit()
         await session.refresh(project, ["work_plan_stages", "observations"])
+
+        # Advance in Bonita if enabled
+        if settings.use_bonita and project.case_id:
+            from app.api.deps import get_bonita_client
+            from app.services.bonita_client import advance_project_in_bonita
+
+            try:
+                # Ensure all relationships are loaded
+                for stage in project.work_plan_stages:
+                    await session.refresh(stage, ["collaboration_requests"])
+
+                # Get Bonita client
+                bonita_client = await get_bonita_client(current_user)
+
+                # Advance to final task - complete "Ejecución del proyecto"
+                await advance_project_in_bonita(
+                    client=bonita_client,
+                    project=project,
+                    expected_task_name=BONITA_TASK_EJECUCION_PROYECTO,
+                    initiator_username=current_user["username"]
+                )
+                logger.info(
+                    "Advanced project in Bonita to completion",
+                    project_id=project.id
+                )
+            except HTTPException as http_exc:
+                # Bonita disabled or session issues - log but don't fail
+                logger.warning(
+                    "Could not advance project in Bonita (non-blocking)",
+                    project_id=project.id,
+                    status_code=http_exc.status_code,
+                    detail=http_exc.detail
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to complete project in Bonita",
+                    project_id=project.id,
+                    error=str(e)
+                )
+                # Don't fail the project completion, just log the error
+
         return project
     except Exception as exc:
         await session.rollback()
@@ -721,6 +861,47 @@ async def start_project_transition(
     try:
         await session.commit()
         await session.refresh(project)
+
+        # Advance in Bonita if enabled
+        if settings.use_bonita and project.case_id:
+            from app.api.deps import get_bonita_client
+            from app.services.bonita_client import advance_project_in_bonita
+
+            try:
+                # Ensure all relationships are loaded
+                await session.refresh(project, ["work_plan_stages"])
+                for stage in project.work_plan_stages:
+                    await session.refresh(stage, ["collaboration_requests"])
+
+                # Get Bonita client
+                bonita_client = await get_bonita_client(current_user)
+
+                # Complete "Seleccionar compromisos" to advance to "Ejecución del proyecto"
+                await advance_project_in_bonita(
+                    client=bonita_client,
+                    project=project,
+                    expected_task_name=BONITA_TASK_SELECCIONAR_COMPROMISOS,
+                    initiator_username=current_user["username"]
+                )
+                logger.info(
+                    "Advanced project in Bonita after starting - completed 'Seleccionar compromisos'",
+                    project_id=project.id
+                )
+            except HTTPException as http_exc:
+                # Bonita disabled or session issues - log but don't fail
+                logger.warning(
+                    "Could not advance project in Bonita (non-blocking)",
+                    project_id=project.id,
+                    status_code=http_exc.status_code,
+                    detail=http_exc.detail
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to advance project in Bonita after starting",
+                    project_id=project.id,
+                    error=str(e)
+                )
+                # Don't fail the status transition, just log the error
 
         return {
             "project_id": project.id,
