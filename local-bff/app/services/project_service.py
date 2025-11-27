@@ -867,9 +867,7 @@ async def resolve_observation(
     if observation.task_id and bonita_client:
         try:
             await bonita_client.complete_task(observation.task_id)
-            logger.info("Bonita task completed for observation", observation_id=observation_id, task_id=observation.task_id)
         except Exception as e:
-            logger.error("Failed to complete Bonita task", observation_id=observation_id, task_id=observation.task_id, error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to complete task in Bonita: {str(e)}"
