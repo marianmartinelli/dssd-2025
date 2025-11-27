@@ -86,7 +86,10 @@ async def list_projects(
     Returns:
         List[Project]: List of projects matching the filters with their work plan stages.
     """
-    stmt = select(Project).options(selectinload(Project.work_plan_stages))
+    stmt = select(Project).options(
+        selectinload(Project.work_plan_stages),
+        selectinload(Project.observations)
+    )
 
     # Apply filters
     if organization_id is not None:
@@ -114,7 +117,10 @@ async def get_project_by_id(project_id: int, session: AsyncSession) -> Optional[
     Returns:
         Optional[Project]: The project with its work plan stages, or None if not found.
     """
-    stmt = select(Project).where(Project.id == project_id).options(selectinload(Project.work_plan_stages))
+    stmt = select(Project).where(Project.id == project_id).options(
+        selectinload(Project.work_plan_stages),
+        selectinload(Project.observations)
+    )
     result = await session.execute(stmt)
     project = result.scalar_one_or_none()
     return project
