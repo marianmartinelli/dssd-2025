@@ -75,6 +75,8 @@ class Observation(Base):
     created_date = Column(DateTime, default=datetime.utcnow)
     created_by = Column(String, nullable=False)
     is_resolved = Column(Boolean, default=False)
+    case_id = Column(Integer, nullable=True)
+    task_id = Column(String, nullable=True)
 
     # Relationships
     project = relationship("Project", back_populates="observations")

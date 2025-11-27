@@ -1,7 +1,7 @@
-from app.schemas.project import ProjectCreate, CollaborationRequestCreate
+from app.schemas.project import ProjectCreate, CollaborationRequestCreate, ObservationCreate
 from typing import Dict, List, Optional
 from app.core.database import get_db_session
-from app.models.project import Project, WorkPlanStage, CollaborationRequest
+from app.models.project import Project, WorkPlanStage, CollaborationRequest, Observation
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -627,3 +627,147 @@ async def start_project_transition(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al realizar la transición: {str(exc)}"
         )
+
+
+async def save_observation(
+    project_id: int,
+    payload: ObservationCreate,
+    current_user: Dict,
+    session: AsyncSession,
+    case_id: Optional[int] = None,
+    task_id: Optional[str] = None,
+) -> Observation:
+    """
+    Crea una nueva observación para un proyecto.
+    
+    Args:
+        project_id (int): ID del proyecto
+        payload (ObservationCreate): Datos de la observación
+        current_user (Dict): Usuario autenticado
+        session (AsyncSession): Sesión de BD
+        case_id (Optional[int]): Case ID de Bonita si se creó el proceso
+        task_id (Optional[str]): Task ID de Bonita para resolver la observación
+        
+    Returns:
+        Observation: La observación creada
+        
+    Raises:
+        HTTPException: Si el proyecto no existe
+    """
+    # Verify project exists
+    stmt = select(Project).where(Project.id == project_id)
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    # Get user_id from current_user (from Bonita or local DB)
+    user_id = current_user.get("username")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID not found in token",
+        )
+    
+    # Create observation
+    observation = Observation(
+        project_id=project_id,
+        title=payload.title,
+        description=payload.description,
+        created_date=datetime.utcnow(),
+        created_by=user_id,
+        case_id=case_id,
+        task_id=task_id,
+    )
+    
+    try:
+        session.add(observation)
+        await session.commit()
+        await session.refresh(observation)
+        return observation
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+
+async def list_observation_by_project(
+    project_id: int,
+    current_user: Dict,
+    session: AsyncSession,
+) -> List[Observation]:
+    """
+    Devuelve todos las observaciones asociadas a un proyecto.
+    Solo el owner del proyecto puede ver las observaciones.
+    """
+    
+    # Verificar que el proyecto existe y obtenerlo
+    project = await session.get(Project, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Proyecto no encontrado",
+        )
+    
+    stmt = (
+        select(Observation)
+        .where(Observation.project_id == project_id)
+        .order_by(Observation.id)
+    )
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
+
+async def resolve_observation(
+    observation_id: int,
+    session: AsyncSession,
+    bonita_client = None,
+) -> ObservationResponse:
+    """
+    Marca una observación como resuelta.
+    Si la observación tiene un task_id de Bonita, completa la tarea en Bonita.
+    
+    Args:
+        observation_id (int): ID de la observación
+        session (AsyncSession): Sesión de BD
+        bonita_client: Cliente de Bonita (opcional, solo si USE_BONITA=true)
+        
+    Returns:
+        Observation: La observación actualizada
+        
+    Raises:
+        HTTPException: Si la observación no existe
+    """
+    # Obtener la observación
+    stmt = select(Observation).where(Observation.id == observation_id)
+    result = await session.execute(stmt)
+    observation = result.scalar_one_or_none()
+    
+    if not observation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Observación no encontrada",
+        )
+    
+    # Si tiene task_id y bonita_client, completar la tarea en Bonita
+    if observation.task_id and bonita_client:
+        try:
+            await bonita_client.complete_task(observation.task_id)
+            logger.info("Bonita task completed for observation", observation_id=observation_id, task_id=observation.task_id)
+        except Exception as e:
+            logger.error("Failed to complete Bonita task", observation_id=observation_id, task_id=observation.task_id, error=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to complete task in Bonita: {str(e)}"
+            )
+    
+    # Marcar como resuelta en BD
+    observation.is_resolved = True
+    await session.commit()
+    await session.refresh(observation)
+    
+    return observation
