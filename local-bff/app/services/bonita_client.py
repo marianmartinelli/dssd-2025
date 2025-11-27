@@ -789,7 +789,7 @@ async def get_completed_cases(self) -> List[Dict[str, Any]]:
 
         # 1. Obtener casos completados activos
         response_active = await self.session.client.get(
-            "/bonita/API/bpm/archivedcase",
+            "/bonita/API/bpm/case",
             params=params,
             headers=self.session.auth_headers,
         )

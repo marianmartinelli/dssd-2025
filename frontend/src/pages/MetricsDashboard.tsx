@@ -24,6 +24,8 @@ import {
   BarChart as BarChart3Icon,
   List as ListIcon,
 } from '@mui/icons-material';
+import { useRoleAccess } from '../hooks/useRoleAccess';
+import { Navigate } from 'react-router-dom';
 
 // --- DEFINICIONES DE TIPOS (TYPESCRIPT INTERFACES) ---
 
@@ -62,7 +64,6 @@ interface KpiCardProps {
   rate: number; // Tasa para determinar el color (para Indicadores 3 y 4)
 }
 
-// --- CONFIGURACIÓN DE DATOS SIMULADOS ---
 const fetchMetrics = async (): Promise<{ data?: MetricsData, error?: string }> => {
   const token = localStorage.getItem('projectplanning_token')
   try {
@@ -148,7 +149,10 @@ const MetricsDashboard: React.FC = () => {
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
+  const { hasRole } = useRoleAccess()
+  if (!hasRole('Gerente')) {
+    return <Navigate to="/projects" replace />
+  }
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);

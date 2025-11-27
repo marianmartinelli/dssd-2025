@@ -21,6 +21,9 @@ import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import MetricsDashboard from './pages/MetricsDashboard'
+import { useRoleAccess } from './hooks/useRoleAccess'
+
 
 type SnackbarState = {
   open: boolean
@@ -41,7 +44,7 @@ const AppBarWithRole = () => {
     <AppBar position="static" elevation={0} color="primary">
       <Toolbar>
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-          ProjectPlanning · Alta de Proyectos
+          ProjectPlanning
         </Typography>
         {isAuthenticated && userRole && (
           <Chip
@@ -102,7 +105,12 @@ function AppContent(): JSX.Element {
   }
 
   const LoginRoute = () => {
+    
     if (isAuthenticated) {
+      const { hasRole } = useRoleAccess()
+      if (hasRole('Gerente')) {
+        return <Navigate to="/metrics" replace />
+      }
       return <Navigate to="/projects" replace />
     }
     return (
@@ -158,6 +166,14 @@ function AppContent(): JSX.Element {
               element={
                 <ProtectedRoute>
                   <ProjectDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/metrics"
+              element={
+                <ProtectedRoute>
+                  <MetricsDashboard />
                 </ProtectedRoute>
               }
             />
