@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Any, Dict, List
-from datetime import date
+from datetime import date, datetime
+from structlog import get_logger
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_bonita_client
 from app.core.database import get_db_session
 from app.services.metrics_service import (
     get_kpi_metrics,
@@ -16,11 +17,12 @@ from app.services.metrics_service import (
     metric_avg_duration,
     get_demand_supply_analysis,
 )
+from app.services.bonita_client import BonitaClient, get_completed_cases
 from app.schemas.metrics import KpiData, OngRankingItem, MetricsData
-from app.models import CollaborationRequest, Project  # Asegúrate de importar tus modelos
+from app.models import CollaborationRequest, Project
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
-
+logger = get_logger()
 @router.get(
     "/dashboard",
     response_model=MetricsData,
@@ -121,25 +123,77 @@ async def get_ong_ranking_endpoint(
 async def get_global_success_rate(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
+    bonita_client: BonitaClient = Depends(get_bonita_client),
 ) -> Dict[str, Any]:
     #require_manager(current_user)
     try:
-        stmt = select(func.count(Project.id))
-        total_res = await db.execute(stmt)
-        total = total_res.scalar() or 0
+        # 1. Obtener casos completados de Bonita usando el método de la clase
+        bonita_finished_cases_raw = await get_completed_cases(bonita_client)
+        logger.info("Fetched completed cases from Bonita", count=len(bonita_finished_cases_raw))
+        # 2. Mapear datos de Bonita para fácil búsqueda (caseId -> fecha_real)
+        bonita_cases_map = {}
+        for case in bonita_finished_cases_raw:
+            if case.get('caseId') and case.get('endDate'):
+                # Convertir la fecha ISO string de Bonita a un objeto datetime
+                try:
+                    end_date_str = case['endDate']
+                    if isinstance(end_date_str, str):
+                        actual_end_datetime = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                    else:
+                        actual_end_datetime = end_date_str
+                    bonita_cases_map[int(case['caseId'])] = actual_end_datetime
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, saltar este caso
+                    continue
+        
+        bonita_case_ids = list(bonita_cases_map.keys())
+
+        if not bonita_case_ids:
+            return {"successRate": 0.0, "lateRate": 0.0, "total_finished": 0}
+
+        # 3. Consultar PostgreSQL para obtener los plazos estimados (end_date)
+        stmt_projects = (
+            select(Project.case_id, Project.end_date)
+            .where(Project.case_id.in_(bonita_case_ids))
+        )
+        db_projects_result = await db.execute(stmt_projects)
+        db_projects = db_projects_result.all() 
+        
+        # 4. Comparar y contar los casos COMPLETADOS A TIEMPO
+        cases_on_time = 0
+        
+        for case_id, estimated_date in db_projects:
+            actual_end_datetime = bonita_cases_map.get(case_id)
+            
+            # Verificación de integridad
+            if not actual_end_datetime or not estimated_date:
+                continue 
+
+            # Convertir fecha estimada (DATE) a DATETIME
+            estimated_end_datetime_floor = datetime(estimated_date.year, estimated_date.month, estimated_date.day)
+            
+            # Si la fecha real <= fecha estimada, es a tiempo
+            if actual_end_datetime <= estimated_end_datetime_floor:
+                cases_on_time += 1
+                
+        completed = cases_on_time
+        total = len(db_projects)
 
         if total == 0:
-            return {"successRate": 0}
-
-        stmt_completed = select(func.count(CollaborationRequest.id)).where(
-            CollaborationRequest.is_completed == True
-        )
-        comp_res = await db.execute(stmt_completed)
-        completed = comp_res.scalar() or 0
+            return {"successRate": 0.0, "lateRate": 0.0, "total_finished": 0}
 
         success_rate = int(round((completed / total) * 100))
-        return {"successRate": success_rate}
+        late_rate = max(0, 100 - success_rate)
+        
+        return {
+            "successRate": success_rate,
+            "lateRate": late_rate,
+            "total_finished": total,
+            "on_time": completed,
+        }
+        
     except Exception as e:
+        print(f"ERROR in get_global_success_rate: {e}") 
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

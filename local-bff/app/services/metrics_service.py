@@ -25,10 +25,8 @@ async def metric_success_rate(project_id: int, db: AsyncSession) -> Dict[str, An
 
     # Completadas
     stmt_completed = (
-        select(func.count(CollaborationRequest.id))
-        .join(WorkPlanStage, CollaborationRequest.work_plan_stage_id == WorkPlanStage.id)
-        .where(WorkPlanStage.project_id == project_id)
-        .where(CollaborationRequest.is_completed == True)
+        select(func.count(Project.id))
+        .where(Project.is_completed == True)
     )
     comp_res = await db.execute(stmt_completed)
     completed = comp_res.scalar() or 0
@@ -128,15 +126,16 @@ async def get_kpi_metrics(session: AsyncSession) -> Dict[str, Any]:
 
 async def get_ong_ranking(session: AsyncSession) -> List[OngRankingItem]:
     """
-    Devuelve el ranking de ONGs por cantidad de proyectos aprobados.
+    Devuelve el ranking de ONGs por cantidad de ofertas de colaboracion aprobadas.
     """
     stmt = (
         select(
-            Project.requesting_organization,
-            func.count(Project.id).label("project_count")
+            CollaborationRequest.committed_by,
+            func.count(CollaborationRequest.id).label("project_count")
         )
-        .group_by(Project.requesting_organization)
-        .order_by(func.count(Project.id).desc())
+        .where(CollaborationRequest.is_completed == True)
+        .group_by(CollaborationRequest.committed_by)
+        .order_by(func.count(CollaborationRequest.id).desc())
         .limit(10)
     )
     
@@ -174,28 +173,6 @@ async def get_project_status_distribution(session: AsyncSession) -> dict:
     }
 
 async def get_demand_supply_analysis(db: AsyncSession) -> Dict[str, Any]:
-    """
-    Métrica 2: Análisis de Demanda y Oferta
-    
-    Agrupa collaboration requests por support_type (demanda).
-    Para cada tipo, devuelve el top 3 de ONGs que se comprometieron (is_approved=True).
-    
-    Retorna:
-    {
-      "demand_supply": [
-        {
-          "support_type": "Dinero",
-          "total_requests": 10,
-          "approved_requests": 7,
-          "top_3_ongs": [
-            {"ong_name": "ONG A", "commitments": 5},
-            {"ong_name": "ONG B", "commitments": 2},
-            {"ong_name": "ONG C", "commitments": 1}
-          ]
-        }
-      ]
-    }
-    """
     try:
         # Obtener todos los support_types distintos
         stmt_types = (
