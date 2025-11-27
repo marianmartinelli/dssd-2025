@@ -215,7 +215,7 @@ const MetricsDashboard: React.FC = () => {
               value={`${data.kpiData.successRate}%`}
               rate={data.kpiData.successRate}
               icon={<CheckCircleIcon />}
-              description={`${data.kpiData.on_time} de ${data.kpiData.total_active} casos activos en término`}
+              description={`${data.kpiData.on_time} de ${data.kpiData.total_active} proyectos activos en término`}
             />
           </Grid>
 
@@ -226,7 +226,7 @@ const MetricsDashboard: React.FC = () => {
               value={`${data.kpiData.lateRate}%`}
               rate={data.kpiData.lateRate}
               icon={<AlertTriangleIcon />}
-              description={`${data.kpiData.delayed} de ${data.kpiData.total_active} casos activos demorados`}
+              description={`${data.kpiData.delayed} de ${data.kpiData.total_active} proyectos activos demorados`}
             />
           </Grid>
           
