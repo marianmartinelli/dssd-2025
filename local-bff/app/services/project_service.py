@@ -434,7 +434,31 @@ async def complete_work_plan_stage(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="La etapa del plan de trabajo ya está completada",
         )
-    
+
+    # Verificar estado del proyecto
+    if project.status != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se pueden completar etapas en proyectos 'en progreso'. Estado actual: {project.status}",
+        )
+
+    # Cargar todas las colaboraciones de esta etapa
+    stmt_collabs = (
+        select(CollaborationRequest)
+        .where(CollaborationRequest.work_plan_stage_id == stage_id)
+    )
+    result_collabs = await session.execute(stmt_collabs)
+    collaborations = result_collabs.scalars().all()
+
+    # Validar que todas las colaboraciones estén completadas
+    if collaborations:
+        incomplete_collabs = [c for c in collaborations if not c.is_completed]
+        if incomplete_collabs:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede completar la etapa. Hay {len(incomplete_collabs)} colaboración(es) pendiente(s) de completar.",
+            )
+
     # Completar la etapa
     stage.is_completed = True
     
@@ -445,6 +469,92 @@ async def complete_work_plan_stage(
     except Exception as exc:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+async def complete_project(
+    project_id: int,
+    current_user: Dict,
+    session: AsyncSession,
+) -> Project:
+    """
+    Completa un proyecto, cambiando status a 'completed'.
+
+    Solo el owner del proyecto puede completarlo.
+    Requiere que todas las etapas estén completadas.
+
+    Args:
+        project_id (int): ID del proyecto
+        current_user (Dict): Usuario autenticado
+        session (AsyncSession): Sesión de BD
+
+    Returns:
+        Project: El proyecto actualizado
+
+    Raises:
+        HTTPException: Si el proyecto no existe, no está en progreso,
+                      tiene etapas incompletas, o el usuario no es el owner
+    """
+    # Obtener el proyecto con sus etapas y observaciones
+    stmt = (
+        select(Project)
+        .options(
+            selectinload(Project.work_plan_stages),
+            selectinload(Project.observations)
+        )
+        .where(Project.id == project_id)
+    )
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Proyecto no encontrado",
+        )
+
+    # Verificar que el usuario sea el owner
+    if project.initiator_user_id != current_user["username"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el owner del proyecto puede completarlo",
+        )
+
+    # Verificar que el proyecto esté en progreso
+    if project.status != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se pueden completar proyectos en progreso. Estado actual: {project.status}",
+        )
+
+    # Verificar que no esté ya completado
+    if project.status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El proyecto ya está completado",
+        )
+
+    # Verificar que todas las etapas estén completadas
+    if project.work_plan_stages:
+        incomplete_stages = [s for s in project.work_plan_stages if not s.is_completed]
+        if incomplete_stages:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede completar el proyecto. Hay {len(incomplete_stages)} etapa(s) pendiente(s) de completar.",
+            )
+
+    # Completar el proyecto
+    project.status = "completed"
+
+    try:
+        await session.commit()
+        await session.refresh(project, ["work_plan_stages", "observations"])
+        return project
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc)
+        )
 
 
 async def check_project_transition_readiness(

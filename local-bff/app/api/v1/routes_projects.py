@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.schemas.project import ProjectCreate, ProjectResponse, CollaborationRequestCreate, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse, ObservationCreate, ObservationResponse
 from app.services.bonita_client import instantiate_project, BonitaClient, instantiate_observation
-from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, start_project_transition, check_project_transition_readiness, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
+from app.services.project_service import save_project, list_projects, create_collaboration_request, list_collaboration_requests_by_project, get_project_by_id, commit_collaboration_request, complete_collaboration_request, complete_work_plan_stage, complete_project, start_project_transition, check_project_transition_readiness, save_observation, list_observation_by_project, resolve_observation as resolve_observation_service
 
 router = APIRouter()
 settings = get_settings()
@@ -267,7 +267,7 @@ async def complete_stage(
 ) -> WorkPlanStageResponse:
     """
     Completa una etapa del plan de trabajo, cambiando is_completed a true.
-    
+
     Solo el owner del proyecto puede completar etapas del plan de trabajo.
     """
     try:
@@ -279,6 +279,34 @@ async def complete_stage(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al completar etapa del plan de trabajo: {str(e)}",
+        )
+
+@router.put(
+    "/{project_id}/complete",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Marcar proyecto como completado",
+)
+async def complete_project_endpoint(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProjectResponse:
+    """
+    Completa un proyecto, cambiando status a 'completed'.
+
+    Solo el owner del proyecto puede completarlo.
+    Requiere que todas las etapas estén completadas.
+    """
+    try:
+        project = await complete_project(project_id, current_user, session)
+        return ProjectResponse.model_validate(project)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al completar proyecto: {str(e)}",
         )
 
 

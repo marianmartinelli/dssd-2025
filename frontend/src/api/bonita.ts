@@ -87,6 +87,16 @@ export const completeCollaboration = async (collaborationId: number) => {
   return data
 }
 
+export const completeStage = async (stageId: number) => {
+  const { data } = await api.put(`/projects/stages/${stageId}/complete`)
+  return data
+}
+
+export const completeProject = async (projectId: number) => {
+  const { data } = await api.put(`/projects/${projectId}/complete`)
+  return data
+}
+
 export const fetchCurrentUser = async (): Promise<CurrentUserResponse> => {
   const { data } = await api.get<CurrentUserResponse>('/auth/me')
   return data

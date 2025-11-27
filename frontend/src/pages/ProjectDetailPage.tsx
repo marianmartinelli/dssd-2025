@@ -17,12 +17,13 @@ import {
 } from '@mui/material'
 import { ArrowBack } from '@mui/icons-material'
 import { format } from 'date-fns'
-import { fetchProjectById, resolveObservation, fetchCollaborationRequests, approveCollaboration, completeCollaboration, fetchCurrentUser, startProjectTransition, checkProjectTransitionReadiness } from '../api/bonita'
+import { fetchProjectById, resolveObservation, fetchCollaborationRequests, approveCollaboration, completeCollaboration, completeStage, completeProject, fetchCurrentUser, startProjectTransition, checkProjectTransitionReadiness } from '../api/bonita'
 import { ObservationModal } from '../components/ObservationModal'
 import { ObservationsListModal } from '../components/ObservationsListModal'
 import { CollaborationRequestsListModal } from '../components/CollaborationRequestsListModal'
 import { CreateCollaborationModal } from '../components/CreateCollaborationModal'
 import { StartProjectDialog } from '../components/StartProjectDialog'
+import { CompleteProjectDialog } from '../components/CompleteProjectDialog'
 import type { ProjectStatus, CollaborationRequestResponse, WorkPlanStageResponse, ProjectStartTransitionResponse, ProjectTransitionReadinessResponse } from '../types/project'
 
 const getStatusLabel = (status: ProjectStatus): string => {
@@ -58,6 +59,7 @@ export const ProjectDetailPage = () => {
     const [createCollabStageName, setCreateCollabStageName] = useState<string>('')
     const [startProjectDialogOpen, setStartProjectDialogOpen] = useState(false)
     const [transitionInfo, setTransitionInfo] = useState<ProjectTransitionReadinessResponse | null>(null)
+    const [completeProjectDialogOpen, setCompleteProjectDialogOpen] = useState(false)
 
     const { data: project, isLoading, error } = useQuery({
         queryKey: ['project', projectId],
@@ -130,6 +132,37 @@ export const ProjectDetailPage = () => {
         },
     })
 
+    const completeStageMutation = useMutation({
+        mutationFn: completeStage,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['projects'] })
+            queryClient.invalidateQueries({ queryKey: ['collaborations', projectId, selectedStageId] })
+            setSnackbar({ message: 'Etapa completada exitosamente', severity: 'success' })
+        },
+        onError: (error: any) => {
+            const message = error.response?.data?.detail || 'Error al completar la etapa'
+            setSnackbar({ message, severity: 'error' })
+        },
+    })
+
+    const completeProjectMutation = useMutation({
+        mutationFn: completeProject,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['projects'] })
+            setCompleteProjectDialogOpen(false)
+            setSnackbar({
+                message: '¡Proyecto completado exitosamente! Felicitaciones.',
+                severity: 'success'
+            })
+        },
+        onError: (error: any) => {
+            const message = error.response?.data?.detail || 'Error al completar el proyecto'
+            setSnackbar({ message, severity: 'error' })
+        },
+    })
+
     const handleResolveObservation = (observationId: number) => {
         resolveMutation.mutate(observationId)
     }
@@ -188,6 +221,24 @@ export const ProjectDetailPage = () => {
     const handleCancelStartProject = () => {
         setStartProjectDialogOpen(false)
         setTransitionInfo(null)
+    }
+
+    const handleCompleteStage = (stageId: number) => {
+        completeStageMutation.mutate(stageId)
+    }
+
+    const handleOpenCompleteProjectDialog = () => {
+        setCompleteProjectDialogOpen(true)
+    }
+
+    const handleCloseCompleteProjectDialog = () => {
+        setCompleteProjectDialogOpen(false)
+    }
+
+    const handleConfirmCompleteProject = () => {
+        if (projectId) {
+            completeProjectMutation.mutate(Number(projectId))
+        }
     }
 
     const isOwner = currentUser?.username === project?.initiatorUserId
@@ -250,6 +301,16 @@ export const ProjectDetailPage = () => {
                                 onClick={handleOpenStartProjectDialog}
                             >
                                 Iniciar Proyecto
+                            </Button>
+                        )}
+                        {isOwner && project.status === 'in_progress' && (
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={handleOpenCompleteProjectDialog}
+                                disabled={completeProjectMutation.isPending}
+                            >
+                                {completeProjectMutation.isPending ? 'Completando...' : 'Completar Proyecto'}
                             </Button>
                         )}
                     </Box>
@@ -419,8 +480,22 @@ export const ProjectDetailPage = () => {
                                             {stage.stageName}
                                         </Typography>
                                         <Box display="flex" alignItems="center" gap={1}>
-                                            {stage.isCompleted && (
+                                            {stage.isCompleted ? (
                                                 <Chip label="Completada" color="success" size="small" />
+                                            ) : (
+                                                isOwner && project.status === 'in_progress' && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        color="success"
+                                                        size="small"
+                                                        onClick={() => handleCompleteStage(stage.id)}
+                                                        disabled={completeStageMutation.isPending && completeStageMutation.variables === stage.id}
+                                                    >
+                                                        {completeStageMutation.isPending && completeStageMutation.variables === stage.id
+                                                            ? 'Completando...'
+                                                            : 'Completar Etapa'}
+                                                    </Button>
+                                                )
                                             )}
                                         </Box>
                                     </Box>
@@ -560,6 +635,14 @@ export const ProjectDetailPage = () => {
                 isLoading={startProjectMutation.isPending}
                 onConfirm={handleConfirmStartProject}
                 onCancel={handleCancelStartProject}
+            />
+
+            <CompleteProjectDialog
+                open={completeProjectDialogOpen}
+                projectName={project.projectName}
+                stages={project.workPlanStages}
+                onConfirm={handleConfirmCompleteProject}
+                onCancel={handleCloseCompleteProjectDialog}
             />
 
             {snackbar && (
